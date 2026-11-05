@@ -1,8 +1,8 @@
-cd /opt/pidp10/systems/tops20
+cd systems/tops20
 ;set console wru=034
 
 set console telnet=buffered=144
-set cons -u telnet=1025
+set cons -u telnet=%PIDP10_CONSOLE_PORT%
 
 set cpu 4096K kl10b
 set tua rh20
@@ -35,7 +35,7 @@ att tty -U 10018
 dep sw 254200000147
 echo
 echo =============================
-echo Console is on telnet 1025
+echo Console is on telnet %PIDP10_CONSOLE_PORT%
 echo Terminal 1 is on telnet 10018
 echo =============================
 echo

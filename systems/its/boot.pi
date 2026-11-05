@@ -1,29 +1,32 @@
-cd /opt/pidp10/systems/its
+cd systems/its
 
 echo
 echo =====================================================================
 echo
 SET CONSOLE TELNET=BUFFERED=144
-set cons -u telnet=1025
+set cons -u telnet=%PIDP10_CONSOLE_PORT%
 echo
-echo use 'telnet localhost 1025' 
+echo use 'telnet localhost %PIDP10_CONSOLE_PORT%' 
 echo or 'pdp view' or 'pdp con'  or 'pdp telcon' for PDP-10 console
 echo
 echo =====================================================================
 echo
 
-; comment out if you don't want chaosnet started:
-!pgrep cbridge && pkill -2 cbridge && echo stopped old cbridge && sleep 3
-; bug? seems we must be in cbridge home dir:
-;cd /opt/pidp10/bin
-!screen -dmS cbridge /opt/pidp10/bin/cbridge -c /opt/pidp10/bin/cbridge.conf
-;cd /opt/pidp10/systems/its
+; Chaosnet bridge. Comment the next line out if you do not want chaosnet.
+;
+; pidp10-spawn does nothing when the daemons are systemd units
+; (PIDP10_MANAGED, exported by pidp10-engine) and otherwise starts one and
+; restarts a stale copy itself. The unconditional
+;   !pgrep cbridge && pkill -2 cbridge
+; that used to sit here had to go: under systemd it SIGTERMs the unit's own
+; process and systemd answers with a restart loop, and the !screen line put
+; the daemon outside any supervisor at all.
+!pidp10-spawn cbridge cbridge -c "$PIDP10_CONF_DATA/cbridge.conf"
 
 
-; comment out if you do not want the Knight TV system started:
-; we start tv11 under screen, so you can reconnect to it for inspection
-!pgrep tv11 && pkill -2 tv11 && echo stopped old tv11 && sleep 3
-!screen -dmS tv11 /opt/pidp10/bin/tv11 -s 4 -p 10011 localhost
+; Knight TV system. Comment the next line out if you do not want it.
+; (It is also a user unit: systemctl --user start pidp10-tv11.service)
+!pidp10-spawn tv11 tv11 -s 4 -p 10011 localhost
 
 ;set console wru=037
 set cpu its

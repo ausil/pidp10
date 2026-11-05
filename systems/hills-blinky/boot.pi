@@ -1,12 +1,12 @@
-cd /opt/pidp10/systems/hills-blinky
+cd systems/hills-blinky
 
 echo
 echo =====================================================================
 echo
 SET CONSOLE TELNET=BUFFERED=144
-set cons telnet=1025
+set cons telnet=%PIDP10_CONSOLE_PORT%
 echo
-echo use 'telnet localhost 1025' 
+echo use 'telnet localhost %PIDP10_CONSOLE_PORT%' 
 echo or 'pdp con'  or 'pdp telcon' for PDP-10 console
 echo
 echo =====================================================================
