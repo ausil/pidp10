@@ -11,7 +11,8 @@
 #     * SCHED_FIFO up to RLIMIT_RTPRIO needs no privileges at all, so instead
 #       of the upstream "chmod +s + setcap cap_sys_nice" dance we just raise
 #       the rtprio limit for the session (see 60-pidp10-rt.conf).
-#   The panel GPIOs are reachable because pidp10 is in the "gpio" group.
+#   The panel GPIOs are reachable because the panel's gpiochip is in the
+#   pidp10 group (udev.d/99-pidp10.rules), which is this account's own group.
 #
 # headless box (no monitor, no panel)? use the system-manager twin:
 #   systemd/system/pidp10-engine@.service

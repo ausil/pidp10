@@ -41,8 +41,12 @@ SendSIGKILL=yes
 PrivateTmp=no
 
 User=pidp10
-Group=pidp10
-SupplementaryGroups=gpio i2c
+# No Group=: pidp10's primary group is pidp10, and writing it here makes the
+# RPM dependency generator require a group this very package provides, which
+# rpmlint calls useless-provides and reviewers call a mistake.
+# The panel chip is already in the pidp10 group (udev.d/99-pidp10.rules); i2c
+# is the only group that has to be added, for /dev/i2c-*.
+SupplementaryGroups=i2c
 NoNewPrivileges=yes
 AmbientCapabilities=CAP_SYS_NICE
 CapabilityBoundingSet=CAP_SYS_NICE
@@ -59,8 +63,9 @@ RestrictSUIDSGID=yes
 LockPersonality=yes
 # simh writes its disk images, tapes and logs inside the tree.
 ReadWritePaths=/var/lib/pidp10 /var/log/pidp10
-# /dev/gpiochip* is group-writable (group gpio) - no PrivateDevices=, which
-# would mount a private /dev without them.
+# /dev/gpiochip* for the panel is group-writable for pidp10 itself, so no
+# supplementary gpio group is needed - and no PrivateDevices=, which would
+# mount a private /dev without the chip nodes at all.
 PrivateDevices=no
 
 [Install]

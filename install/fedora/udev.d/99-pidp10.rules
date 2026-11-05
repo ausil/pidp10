@@ -1,19 +1,38 @@
 # /etc/udev/rules.d/99-pidp10.rules
 #
-# Fedora ships /dev/gpiochip* as root:gpio 0660 already (that is why the
-# pidp10 user only needs the "gpio" group). It does NOT ship a usable mode for
-# the I2C clients: /dev/i2c-* comes up root:root 0600, so anything wanting
-# i2c-dev has to be root. Open it up to a group instead of using setuid.
+# Which device nodes the unprivileged pidp10 account may open, and nothing
+# else: this replaces install.sh's "chmod +s /opt/pidp10/bin/pidp10", so no
+# simulator binary is installed setuid root or setcap.
 #
+# Fedora already ships /dev/gpiochip* as root:gpio 0660 (/lib/udev/rules.d/
+# 90-gpio.rules), so the obvious move is to put pidp10 in the "gpio" group.
+# This file does something narrower instead, for two reasons:
+#
+#   * "gpio" is every gpiochip on the machine. A laptop has a dozen (on this
+#     ThinkPad, gpiochip0 is a Qualcomm PMIC's GPIO block, whose lines are
+#     power rails), and a simulator that can be talked into driving one is a
+#     way to brown the machine out, not a feature.
+#   * re-tagging all of them to a group that another package owns is not ours
+#     to decide.
+#
+# So only the controller the panel is actually wired to is re-tagged, into the
+# simulator's own group (install/fedora/sysusers.d/30-pidp10.conf): the 22
+# panel lines are on the SoC GPIO controller on a Pi 4 (pinctrl-bcm2835) and on
+# the RP1 I/O hub on a Pi 5 (pinctrl-rp1), which is a separate chip and needs
+# its own match. Everywhere else no rule applies, the nodes keep the mode the
+# distribution chose, and pidp-gpio-probe says "no panel" - the honest answer.
+# An unusual wiring (I2C/SPI GPIO expander, a shield) needs a rule of its own
+# (udevadm info -a -n /dev/gpiochipN, then a drop-in in this directory) plus
+# PIDP10_GPIO_CHIP to tell the simulator which chip to drive.
+#
+#  systemd-udevd(8), udev(7)
 #  install -D -m 0644 99-pidp10.rules /etc/udev/rules.d/99-pidp10.rules
-#  udevadm control --reload && udevadm trigger -c add /dev/i2c-*
-#
-# This replaces the "chmod +s /opt/pidp10/bin/pidp10" hack in install.sh: no
-# simulator binary needs to be setuid root any more.
+#  udevadm control --reload && udevadm trigger -c add /dev/gpiochip* /dev/i2c-*
 
-KERNEL=="gpiochip[0-9]*", GROUP="gpio", MODE="0660"
-KERNEL=="i2c-[0-9]*",     GROUP="i2c", MODE="0660"
+KERNEL=="gpiochip*", SUBSYSTEM=="gpio", \
+    DRIVERS=="pinctrl-bcm2835|pinctrl-rp1", GROUP="pidp10", MODE="0660"
 
-# The PiDP-10 front panel is driven from userspace; make sure the chip the
-# panel is wired to is group-readable even if a vendor rule is stricter.
-SUBSYSTEM=="gpio", GROUP="gpio", MODE="0660"
+# i2c-dev clients (real-time clock, panel EEPROM). Fedora sets no mode for
+# these, so they are root:root 0600 and an unprivileged process cannot open
+# them at all; group access is the alternative to running them as root.
+KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0660"
