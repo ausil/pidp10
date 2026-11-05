@@ -9,10 +9,10 @@ state in `/var/lib`, services managed by systemd, and no `chmod +s` anywhere.
 | Path | Contents | Written at run time? |
 |---|---|---|
 | `/usr/bin/pdp10-{ka,ki,kl,ks}`, `/usr/bin/pdp6` | the simh engines | no |
-| `/usr/bin/{sty,st,scansw10,pidp10-test}` | terminals and panel tools, built from `src/` | no |
+| `/usr/bin/{sty,st,scansw10}` | terminals and the maintenance-switch reader the engine unit calls | no |
 | `/usr/bin/{pdp,pdpcontrol}` | user front doors | no |
 | `/usr/bin/pidp10-fetch-images` | fetches the OS/media images into the state tree (the package ships none) | no |
-| `/usr/bin/{pinctrl,pidp-gpio-probe}` | GPIO inspection / "is a cabinet attached?" (`pidp10-panel`) | no |
+| `/usr/bin/{pinctrl,pidp-gpio-probe,pidp10-test}` | GPIO inspection, "is a cabinet attached?", cabinet bring-up test (`pidp10-panel`) | no |
 | `%{_libdir}/pidp10/bin/` | prebuilt device simulators with no source in this tree (`pidp10-vendored`: cbridge, tv11, tvcon, imlac, vt05/50/52, ...) | no |
 | `/usr/share/pidp10/systems/` | `boot.pi` / `boot.pidp` scripts and read-only system data | no |
 | `/usr/share/pidp10/{conf,sounds,view.json}` | cbridge.conf, chaos-hosts, `.wav` samples, browser panel | no |
@@ -59,10 +59,12 @@ The consequences worth knowing:
   the package and send a foreign-prefix build looking in `/usr`. Move the state
   directory with a unit drop-in (`Environment=PIDP10_STATE=...`), which at
   least shows up in `systemctl cat`.
-* `install` refuses to run on an empty `build/`. The tree still keeps prebuilt
-  `st`, `sty`, `scansw10` and `pidp10-test` for people who do not build, and an
-  installer that falls back to whatever sits in `src/` ships one of those
-  silently.
+* `install` refuses to run on an incomplete `build/`. Nothing is installed from
+  `src/`: the panel tools are built by `src/utils/pinctrl`'s cmake, the engines
+  by simh's makefile and the terminals by their own makefiles, all into
+  `./build`, and the committed ELFs that used to sit next to the sources are
+  gone from git (an installer that falls back to whatever is lying in `src/`
+  ships a stale one silently).
 * `PIDP10_HOME=<checkout>` remains a developer shortcut: it is used as a last
   resort when looking for the engines and the vendored sims, so
   `PIDP10_HOME=$PWD install/fedora/libexec/pidp10-engine 1` works with nothing
@@ -71,28 +73,38 @@ The consequences worth knowing:
 ## Building the RPM
 
 ```sh
-packaging/build-rpm.sh                      # clean tarball, no binary blobs
-packaging/build-rpm.sh --with-vendored      # also builds pidp10-vendored
+packaging/build-rpm.sh                       # clean tarball, no binary blobs
+packaging/build-rpm.sh --with-vendored       # also builds pidp10-vendored
+packaging/build-rpm.sh --worktree            # package the tree as it stands
 ```
 
-`build-rpm.sh` runs `git archive` over a stashed view of the work tree, so the
-tarball is the committed state plus uncommitted changes to tracked files - and
-**not** untracked files. `git status` calling something untracked means the
-package build cannot see it; that is deliberate, since a package must be
-reproducible from the repository alone. The `Release:` is
-`1.<gitdate>git<gitrev>` so a rebuilt snapshot upgrades cleanly and is
-attributable.
+By default the tarballs are `git archive` of HEAD: what ships is what is
+committed, the only state of the project anyone else can rebuild. A dirty work
+tree is warned about rather than silently packaged; `--worktree` says explicitly
+that you want the uncommitted version (it uses `git ls-files`, so `.gitignore`
+still decides what is in - `build/` and `rpmbuild/` are not).
+
+`Source0` never contains `bin/`. The 46 MB of prebuilt AI Lab peripherals -
+ELF with no source in this tree - come in `Source2` and are unpacked only for
+`--with vendored`, so the tarball a distribution verifies against a checksum
+contains no unreviewed blob.
+
+The `Release:` is `1.<gitdate>git<gitrev>` so a rebuilt snapshot upgrades
+cleanly and is attributable.
 
 Subpackages: `pidp10` (engines, helpers, units, config), `pidp10-panel`
-(pinctrl, pidp-gpio-probe, the `/dev/gpiochip*` udev rule), `pidp10-ui`
-(fonts, icons, `.desktop` files, tilix layout), `pidp10-vendored` (the ELF-only
-peripherals).
+(pinctrl, pidp-gpio-probe, pidp10-test, the `/dev/gpiochip*` udev rule),
+`pidp10-ui` (fonts, icons, `.desktop` files, tilix layout), `pidp10-vendored`
+(the ELF-only peripherals in `%{_libdir}/pidp10/bin`). `pidp10` Recommends
+`pidp10-panel`, because the engine unit asks the probe whether a cabinet is
+attached; both helpers degrade without it.
 
 Two switches:
 
-* `--with vendored` installs `bin/`'s prebuilt ELFs into `pidp10-vendored`.
-  Off by default, so a build that forbids binary blobs still produces a
-  working simulator (you lose cbridge/tv11/the exotic terminals).
+* `--with vendored` installs `bin/`'s prebuilt ELFs into `pidp10-vendored`
+  (`cbridge`, `tv11`, `tvcon`, `imlac`, `vt05/50/52`, ...). Off by default, so a
+  build that forbids binary blobs still produces a working simulator (you lose
+  cbridge/tv11/the exotic terminals).
 * `--with kiosk_default` flips the systemd presets to enable the cabinet
   service at install, for a machine whose only purpose is blinkenlights.
   Off by default: a package that starts a PDP-10 on someone's laptop unasked
@@ -139,9 +151,19 @@ Debian-capable machine, verify with `lintian` before trusting any of it.
 ```sh
 pidp-gpio-probe --check      # exit 0 only if a real Broadcom panel is there
 pidp-gpio-probe --selftest   # drives the mux loop on the sim backend
+pidp10-test 10               # lamps + switch echo, works on the sim backend too
 pdpcontrol stat
 ```
 
 `pidp-gpio-probe --check` is what the engine unit asks instead of the old
 `gpioinfo | grep gpio`, which was true on any machine with GPIO at all -
 including a laptop whose eleven gpiochips are PMIC power rails.
+
+Package-level checks used while developing this:
+
+```sh
+packaging/build-rpm.sh --worktree --with-vendored /tmp/rpb
+rpmlint /tmp/rpb/RPMS/*/*.rpm            # only spelling-of-domain-terms left
+systemd-analyze verify /tmp/rpb/BUILD/.../BUILDROOT/usr/lib/systemd/system/*
+udevadm verify install/fedora/udev.d/99-pidp10.rules
+```

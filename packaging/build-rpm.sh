@@ -1,21 +1,27 @@
 #!/usr/bin/bash
 # SPDX-License-Identifier: BSD-2-Clause
 #
-# build-rpm.sh - build the RPMs from the current git tree.
+# build-rpm.sh - build the RPMs from this tree.
 #
-#   packaging/build-rpm.sh [topdir]                default topdir: ./rpmbuild
-#   packaging/build-rpm.sh --with-vendored [topdir]
+#   packaging/build-rpm.sh [topdir]                    default topdir: ./rpmbuild
+#   packaging/build-rpm.sh --with-vendored [topdir]    also build pidp10-vendored
+#   packaging/build-rpm.sh --worktree [topdir]         package the work tree
 #
-# Uses `git archive` on a stashed view of the work tree, so the tarball is the
-# committed state plus any uncommitted changes to tracked files. Untracked new
-# files are NOT included - if `git status` says untracked, the build will not
-# see it, and that is deliberate: a package built from a tarball must be
-# reproducible from the repository alone.
+# By default the source tarballs are `git archive` of HEAD: what ships is what
+# is committed, which is the only version of the project that is reproducible
+# from the repository alone. If the work tree is dirty that is said out loud,
+# because the alternative - silently building an RPM nobody can rebuild - is how
+# a package ends up containing a fix that exists in one person's checkout.
 #
-# The default Source0 excludes bin/, the 46 MB of prebuilt AI Lab peripheral
-# simulators that have no source in this tree: a distribution build that forbids
-# binary blobs then gets a clean tarball, and --with-vendored produces the one
-# that also builds pidp10-vendored.
+# --worktree packages the tree as it stands instead (tracked modifications and
+# untracked files, minus what .gitignore excludes). For testing a change before
+# committing it. Not for anything that leaves the machine.
+#
+# Source0 never contains bin/, the 46 MB of prebuilt AI Lab peripheral
+# simulators that have no source in this tree, so the tarball a distribution
+# builds from has no unreviewed ELF in it. --with-vendored additionally
+# produces pidp10-vendored-<version>.tar.gz (Source2) and builds the subpackage
+# that installs them, for a cabinet.
 
 set -euo pipefail
 
@@ -24,10 +30,14 @@ root=$(cd "$here/.." && pwd)
 cd "$root"
 
 vendored=0
-if [ "${1:-}" = "--with-vendored" ]; then
-	vendored=1
+worktree=0
+while [ "${1:-}" = "--with-vendored" ] || [ "${1:-}" = "--worktree" ]; do
+	case "$1" in
+	    --with-vendored) vendored=1 ;;
+	    --worktree)      worktree=1 ;;
+	esac
 	shift
-fi
+done
 top=$(realpath -m "${1:-rpmbuild}")
 
 version=$(sed -n 's/^%global simh_version \([0-9.]*\).*/\1/p' "$here/pidp10.spec" | head -1)
@@ -38,17 +48,48 @@ topdir_prefix=$name-$version
 rev=$(git rev-parse --short HEAD)
 date=$(git show -s --format=%cd --date=format:%Y%m%d HEAD)
 
+# make_tarball DEST PREFIX PATHSPEC...
+#   PREFIX "" means the archive holds bare relative paths (%prep unpacks those
+#   into an existing directory rather than creating a source directory).
+make_tarball()
+{
+	local dest=$1 prefix=$2; shift 2
+
+	if [ "$worktree" = 1 ]; then
+		# git ls-files keeps .gitignore in force, so build/, rpmbuild/ and the
+		# stray objects under src/ stay out the same way they do for git.
+		# (tar has no --prefix; --transform with the S flag is what rewrites
+		# the name of a file *and* of what a symlink points at.)
+		git ls-files -z --cached --others --exclude-standard -- "$@" |
+		    tar --format=gnu --null ${prefix:+--transform="s|^|$prefix/|S"} -cf - -T - |
+		    gzip > "$dest"
+	else
+		git archive --format=tar ${prefix:+--prefix="$prefix/"} HEAD -- "$@" |
+		    gzip > "$dest"
+	fi
+}
+
+if [ "$worktree" = 1 ]; then
+	echo "build-rpm: packaging the WORK TREE (uncommitted changes included;"
+	echo "build-rpm: nobody but you can rebuild this)" >&2
+elif [ -n "$(git status --porcelain)" ]; then
+	echo "build-rpm: WARNING: work tree is dirty; HEAD is being packaged and" >&2
+	echo "build-rpm: your uncommitted work is NOT in it. --worktree to include it." >&2
+	git status --short | head -20 >&2
+fi
+
 mkdir -p "$top"/{SOURCES,BUILD,RPMS,SRPMS}
 
-# --exclude the vendored set unless asked for; the prefix must match %{name}-%{version}
-# or %autosetup -n fails.
+# Source0: everything except the prebuilt peripherals. The prefix must match
+# %{name}-%{version} or %autosetup -n fails.
+make_tarball "$top/SOURCES/$topdir_prefix.tar.gz" "$topdir_prefix" . ':!bin'
+
 if [ "$vendored" = 1 ]; then
-	git archive --format=tar --prefix="$topdir_prefix/" HEAD | gzip \
-	    > "$top/SOURCES/$topdir_prefix.tar.gz"
+	# No prefix: %prep unpacks this straight into bin/ of the source tree, so
+	# the Makefile's WITH_VENDORED path needs no extra variable.
+	make_tarball "$top/SOURCES/$name-vendored-$version.tar.gz" "" bin
 	with=--with=vendored
 else
-	git archive --format=tar --prefix="$topdir_prefix/" HEAD -- . ':!bin' | gzip \
-	    > "$top/SOURCES/$topdir_prefix.tar.gz"
 	with=--without=vendored
 fi
 cp install/fedora/sysusers.d/30-pidp10.conf "$top/SOURCES/30-pidp10.conf"
