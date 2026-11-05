@@ -1,4 +1,6 @@
        #include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
 #ifdef WIN32
 #include "SDL/include/SDL.h"
 #undef main
@@ -32,48 +34,69 @@ extern int tty_soundmode; // 0=mute, 1=lid_closed, 2=lid_open
 
 
 #define NUM_WAVEFORMS 40
+
+/*
+ * Where the .wav samples live.
+ *
+ * Upstream hardcoded "..." into the table below, so the
+ * Teletype was silent unless the project happened to be installed at that one
+ * path - and there was no way to tell it otherwise at build time or run time.
+ * The table now holds bare file names; the directory comes from $PIDP10_SOUNDS,
+ * falling back to the directory the package was built with.
+ */
+#ifndef PIDP10_SOUNDS_DIR
+#define PIDP10_SOUNDS_DIR "/usr/share/pidp10/sounds"
+#endif
+
+static const char *
+pidp10_sounds_dir(void)
+{
+    const char *d = getenv("PIDP10_SOUNDS");
+
+    return (d && *d) ? d : PIDP10_SOUNDS_DIR;
+}
 const char* _waveFileNames[] =
 {
-  "/opt/pidp10/bin/sounds/down-bell.wav",   // 0
-  "/opt/pidp10/bin/sounds/down-cr-01.wav",  // 1
-  "/opt/pidp10/bin/sounds/down-cr-02.wav",  // 2
-  "/opt/pidp10/bin/sounds/down-cr-03.wav",  // 3
-  "/opt/pidp10/bin/sounds/down-hum.wav",    // 4
-  "/opt/pidp10/bin/sounds/down-key-01.wav", // 5
-  "/opt/pidp10/bin/sounds/down-key-02.wav", // 6
-  "/opt/pidp10/bin/sounds/down-key-03.wav", // 7
-  "/opt/pidp10/bin/sounds/down-key-04.wav", // 8
-  "/opt/pidp10/bin/sounds/down-key-05.wav", // 9
-  "/opt/pidp10/bin/sounds/down-key-06.wav", // 10
-  "/opt/pidp10/bin/sounds/down-key-07.wav", // 11
-  "/opt/pidp10/bin/sounds/down-lid.wav",    // 12
-  "/opt/pidp10/bin/sounds/down-motor-off.wav",  // 13
-  "/opt/pidp10/bin/sounds/down-motor-on.wav",   // 14
-  "/opt/pidp10/bin/sounds/down-platen.wav",     // 15
-  "/opt/pidp10/bin/sounds/down-print-chars-01.wav",     // 16
-  "/opt/pidp10/bin/sounds/down-print-chars-02.wav",     // 17
-  "/opt/pidp10/bin/sounds/down-print-spaces-01.wav",    // 18
-  "/opt/pidp10/bin/sounds/down-print-spaces-02.wav",    // 19
-  "/opt/pidp10/bin/sounds/up-bell.wav",     // 20
-  "/opt/pidp10/bin/sounds/up-cr-01.wav",    // 21
-  "/opt/pidp10/bin/sounds/up-cr-02.wav",    // 22
-  "/opt/pidp10/bin/sounds/up-cr-03.wav",    // 23
-  "/opt/pidp10/bin/sounds/up-hum.wav",      // 24
-  "/opt/pidp10/bin/sounds/up-key-01.wav",   // 25
-  "/opt/pidp10/bin/sounds/up-key-02.wav",   // 26
-  "/opt/pidp10/bin/sounds/up-key-03.wav",   // 27
-  "/opt/pidp10/bin/sounds/up-key-04.wav",   // 28
-  "/opt/pidp10/bin/sounds/up-key-05.wav",   // 29
-  "/opt/pidp10/bin/sounds/up-key-06.wav",   // 30
-  "/opt/pidp10/bin/sounds/up-key-07.wav",   // 31
-  "/opt/pidp10/bin/sounds/up-lid.wav",      // 32
-  "/opt/pidp10/bin/sounds/up-motor-off.wav",    // 33
-  "/opt/pidp10/bin/sounds/up-motor-on.wav",     // 34
-  "/opt/pidp10/bin/sounds/up-platen.wav",       // 35
-  "/opt/pidp10/bin/sounds/up-print-chars-01.wav",   // 36
-  "/opt/pidp10/bin/sounds/up-print-chars-02.wav",   // 37
-  "/opt/pidp10/bin/sounds/up-print-spaces-01.wav",  // 38
-  "/opt/pidp10/bin/sounds/up-print-spaces-02.wav"   // 39
+  "down-bell.wav",   // 0
+  "down-cr-01.wav",  // 1
+  "down-cr-02.wav",  // 2
+  "down-cr-03.wav",  // 3
+  "down-hum.wav",    // 4
+  "down-key-01.wav", // 5
+  "down-key-02.wav", // 6
+  "down-key-03.wav", // 7
+  "down-key-04.wav", // 8
+  "down-key-05.wav", // 9
+  "down-key-06.wav", // 10
+  "down-key-07.wav", // 11
+  "down-lid.wav",    // 12
+  "down-motor-off.wav",  // 13
+  "down-motor-on.wav",   // 14
+  "down-platen.wav",     // 15
+  "down-print-chars-01.wav",     // 16
+  "down-print-chars-02.wav",     // 17
+  "down-print-spaces-01.wav",    // 18
+  "down-print-spaces-02.wav",    // 19
+  "up-bell.wav",     // 20
+  "up-cr-01.wav",    // 21
+  "up-cr-02.wav",    // 22
+  "up-cr-03.wav",    // 23
+  "up-hum.wav",      // 24
+  "up-key-01.wav",   // 25
+  "up-key-02.wav",   // 26
+  "up-key-03.wav",   // 27
+  "up-key-04.wav",   // 28
+  "up-key-05.wav",   // 29
+  "up-key-06.wav",   // 30
+  "up-key-07.wav",   // 31
+  "up-lid.wav",      // 32
+  "up-motor-off.wav",    // 33
+  "up-motor-on.wav",     // 34
+  "up-platen.wav",       // 35
+  "up-print-chars-01.wav",   // 36
+  "up-print-chars-02.wav",   // 37
+  "up-print-spaces-01.wav",  // 38
+  "up-print-spaces-02.wav"   // 39
 };
 
 Mix_Chunk* _sample[NUM_WAVEFORMS]; // was 2
@@ -104,13 +127,28 @@ int sound_init(void)
     }
 
     // Load waveforms
-    for( int i = 0; i < NUM_WAVEFORMS; i++ )
     {
-        _sample[i] = Mix_LoadWAV(_waveFileNames[i]);
-        if( _sample[i] == NULL )
+        const char *dir = pidp10_sounds_dir();
+        int loaded = 0;
+
+        for( int i = 0; i < NUM_WAVEFORMS; i++ )
         {
-            fprintf(stderr, "Unable to load wave file: %s\n", _waveFileNames[i]);
+            char path[4096];
+
+            snprintf(path, sizeof path, "%s/%s", dir, _waveFileNames[i]);
+            _sample[i] = Mix_LoadWAV(path);
+            if( _sample[i] == NULL )
+            {
+                if (loaded == 0)
+                    fprintf(stderr, "sty: no sound samples in %s "
+                            "(set PIDP10_SOUNDS, or install the pidp10 data "
+                            "package)\n", dir);
+            }
+            else
+                loaded++;
         }
+        if (loaded == 0)
+            fprintf(stderr, "sty: continuing muted\n");
     }
 //fprintf(stderr, "sound_init done\r");
 
