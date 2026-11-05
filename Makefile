@@ -1,0 +1,225 @@
+# Top-level build and install for the PiDP-10 software.
+#
+#   make                    build everything into ./build
+#   make install DESTDIR=/tmp/root PREFIX=/usr
+#
+# Builds are out of tree (into $(BUILDDIR)); the binaries tracked in the
+# repository are never touched, and "make install" refuses to run on an empty
+# $(BUILDDIR) rather than falling back to a committed ELF. A stale binary that
+# installs silently is the failure mode this file exists to prevent: upstream's
+# installer copied whatever sat in src/, and the tree keeps prebuilt copies of
+# st, sty, scansw10 and pidp10-test for the benefit of people who do not build.
+#
+# CFLAGS/LDFLAGS from the environment are honoured (rpmbuild's, %set_build_flags).
+#
+# Needs: gcc, make, cmake, pkg-config, libgpiod-devel, readline or libedit,
+# libpcap-devel, zlib/libpng (simh video); SDL2 (+image/ttf/mixer) and X11/Xft,
+# fontconfig, freetype for sty and st.
+
+PREFIX        ?= /usr
+BINDIR        ?= $(PREFIX)/bin
+LIBEXECDIR    ?= $(PREFIX)/libexec/pidp10
+DATADIR       ?= $(PREFIX)/share/pidp10
+VENDORBINDIR  ?= $(PREFIX)/lib/pidp10/bin
+SYSCONFDIR    ?= /etc
+UNITDIR       ?= $(PREFIX)/lib/systemd/system
+USERUNITDIR   ?= $(PREFIX)/lib/systemd/user
+PRESETDIR     ?= $(PREFIX)/lib/systemd/system-preset
+USERPRESETDIR ?= $(PREFIX)/lib/systemd/user-preset
+SYSUSERSDIR   ?= $(PREFIX)/lib/sysusers.d
+TMPFILESDIR   ?= $(PREFIX)/lib/tmpfiles.d
+UDEVDIR       ?= $(PREFIX)/lib/udev/rules.d
+LOGINDDIR     ?= $(PREFIX)/lib/systemd/logind.conf.d
+FIREWALLDIR   ?= $(PREFIX)/lib/firewalld/services
+ICONSDIR      ?= $(PREFIX)/share/icons/hicolor
+APPSDIR       ?= $(PREFIX)/share/applications
+FONTSDBIR     ?= $(PREFIX)/share/fonts/pidp10
+COMPLETIONDIR ?= $(PREFIX)/share/bash-completion/completions
+STATEDIR      ?= /var/lib/pidp10
+
+BUILDDIR      ?= build
+# WITH_STY=no skips the two X11/SDL terminals; WITH_VENDORED=yes installs the
+# device sims that have no source in this tree (they go to their own subpackage
+# precisely so a build that forbids binary blobs can leave them out).
+WITH_STY      ?= yes
+WITH_VENDORED ?= no
+
+CC      ?= gcc
+CFLAGS  ?= -O2 -g
+B       := $(abspath $(BUILDDIR))
+
+PDP10D   := src/pdp10
+PINCTRLD := src/utils/pinctrl
+SERVER_TOOLS := scansw10 pidp10-test
+ENGINES      := pdp10-ka pdp10-ki pdp10-kl pdp10-ks pdp6
+VENDORED     := cbridge dm2500 dp3300 gecon gw imlac mkpty33 mlftp shutdown \
+                supdup tek4010 tv11 tvcon vt05 vt50 vt52 pidp10 pidp10.panama
+
+# Rewrite the install locations baked into the units, the helpers and the
+# front-ends. They are written with /usr paths so the tree is readable and
+# systemd-analyze verify works on a checkout; a build with another prefix has
+# to have them rewritten here rather than discovering them at run time, which
+# is what a "paths" shell library is for in other projects and what makes
+# `systemctl cat` and `pdp` agree without either hunting for a config file.
+SUBST = sed -e 's|/usr/libexec/pidp10|$(LIBEXECDIR)|g' \
+            -e 's|$(PREFIX)/share/pidp10|$(DATADIR)|g' \
+            -e 's|/usr/share/pidp10|$(DATADIR)|g' \
+            -e 's|/var/lib/pidp10|$(STATEDIR)|g' \
+            -e 's|/etc/pidp10|$(SYSCONFDIR)/pidp10|g' \
+            -e 's|/usr/lib/pidp10/bin|$(VENDORBINDIR)|g'
+
+# simh's makefile assembles its own compile line: ${GCC} is the compiler,
+# CFLAGS_O the optimisation block and LDFLAGS the link line. WARNINGS=ALLOWED
+# because the makefile adds -Werror unless it sees that string, and the simh
+# sources are not warning-clean at a distribution's -O2 (-Wall from
+# %optflags then fails the build on "may be used uninitialized" in code we do
+# not maintain). The warnings are still printed; they are just not fatal.
+SIMH_FLAGS = GCC='$(CC)' OPTIMIZE='$(CFLAGS) -DNDEBUG=1' \
+             EXTRA_LDFLAGS='$(LDFLAGS)' WARNINGS=ALLOWED PIDP10=1
+
+.PHONY: all engines panel tools sty st install clean clean-all
+
+all: engines panel tools $(if $(filter yes,$(WITH_STY)),sty st)
+
+$(B):
+	mkdir -p $(B)
+
+# --- the simh engines -------------------------------------------------------
+# PIDP10=1 compiles in the front-panel thread, which picks gpiod, gpiomem or
+# sim at run time, so the same binary drives a cabinet or runs headless.
+engines: | $(B)
+	$(MAKE) -C $(PDP10D) $(SIMH_FLAGS) BIN=$(B)/ $(ENGINES)
+
+# --- GPIO tools and the panel probe ----------------------------------------
+# cmake, because pinctrl comes from Raspberry Pi OS that way. LTO is switched
+# off per target in its CMakeLists: the gpiochip_* tables are found through the
+# linker-provided __start_gpiochips and LTO deletes them as dead code.
+panel: | $(B)
+	cmake -S $(PINCTRLD) -B $(B)/pinctrl-build \
+	    -DCMAKE_C_COMPILER='$(CC)' -DCMAKE_BUILD_TYPE=Release \
+	    -DCMAKE_C_FLAGS='$(CFLAGS)' -DCMAKE_EXE_LINKER_FLAGS='$(LDFLAGS)' \
+	    -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$(B)
+	cmake --build $(B)/pinctrl-build
+	@test -x $(B)/pidp-gpio-probe || \
+	    echo "NOTE: pidp-gpio-probe not built (needs libgpiod >= 2.0); the"\
+	         "front panel falls back to sim on kernels without /dev/gpiomem" >&2
+
+# --- panel diagnostics ------------------------------------------------------
+# Both read the GPIO registers through pinctrl's gpiolib, i.e. they are
+# Raspberry Pi OS tools; the supported panel path is pidp_panel.c.
+tools: | $(B)
+	for t in $(SERVER_TOOLS); do \
+	    $(MAKE) -C src/$$t CC='$(CC)' CFLAGS='$(CFLAGS)' LDFLAGS='$(LDFLAGS)'; \
+	    cp -f src/$$t/$$t $(B)/; \
+	done
+
+# --- terminals (X11 + SDL; the st makefile builds in its source tree) -------
+# The sound directory is compiled in, not guessed at run time: the samples are
+# read on every keystroke and $PIDP10_SOUNDS stays as the override.
+sty: | $(B)
+	$(MAKE) -C src/sty33 CC='$(CC)' CFLAGS='$(CFLAGS)' LDFLAGS='$(LDFLAGS)' CPPFLAGS='$(CPPFLAGS) -DPIDP10_SOUNDS_DIR=\"$(DATADIR)/sounds\"'
+	cp -f src/sty33/sty $(B)/sty
+
+st: | $(B)
+	$(MAKE) -C src/st-0.9.2 CC='$(CC)' CFLAGS='$(CFLAGS)' LDFLAGS='$(LDFLAGS)' CPPFLAGS='$(CPPFLAGS)'
+	cp -f src/st-0.9.2/st $(B)/st
+
+# --- install ----------------------------------------------------------------
+# Installs what "make" built, and nothing else: deliberately does not rebuild,
+# because an RPM build runs "make install" in a different environment from
+# "make" (different flags, no network), and a silent rebuild there produces a
+# binary that was not tested by the test phase.
+install:
+	@missing=""; for f in $(ENGINES) pinctrl scansw10 pidp10-test; do \
+	    [ -x $(B)/$$f ] || missing="$$missing $$f"; done; \
+	if [ "$$(echo $$missing)" != "" ]; then \
+	    echo "make install: not built in $(B):$$missing - run 'make' first" >&2; \
+	    [ "$${PIDP10_ALLOW_PARTIAL:-}" = 1 ] || exit 1; \
+	fi
+	install -d $(DESTDIR)$(BINDIR) $(DESTDIR)$(LIBEXECDIR) $(DESTDIR)$(DATADIR)/systems \
+	    $(DESTDIR)$(DATADIR)/conf $(DESTDIR)$(DATADIR)/sounds \
+	    $(DESTDIR)$(SYSCONFDIR)/pidp10 $(DESTDIR)$(UNITDIR) $(DESTDIR)$(USERUNITDIR) \
+	    $(DESTDIR)$(PRESETDIR) $(DESTDIR)$(USERPRESETDIR) $(DESTDIR)$(SYSUSERSDIR) \
+	    $(DESTDIR)$(TMPFILESDIR) $(DESTDIR)$(UDEVDIR) $(DESTDIR)$(LOGINDDIR) \
+	    $(DESTDIR)$(FIREWALLDIR) $(DESTDIR)$(ICONSDIR)/48x48/apps \
+	    $(DESTDIR)$(ICONSDIR)/scalable/apps $(DESTDIR)$(APPSDIR) \
+	    $(DESTDIR)$(FONTSDBIR) $(DESTDIR)$(COMPLETIONDIR)
+	install -m 0755 $(addprefix $(B)/,$(ENGINES)) $(DESTDIR)$(BINDIR)/
+	install -m 0755 $(B)/pinctrl $(B)/scansw10 $(B)/pidp10-test $(DESTDIR)$(BINDIR)/
+	@# pidp-gpio-probe is only built when libgpiod is present.
+	@-install -m 0755 $(B)/pidp-gpio-probe $(DESTDIR)$(BINDIR)/ 2>/dev/null
+	install -m 0644 $(PINCTRLD)/pinctrl-completion.bash $(DESTDIR)$(COMPLETIONDIR)/pinctrl
+	@# helpers and user commands, with the paths rewritten
+	for h in install/fedora/libexec/*; do \
+	    $(SUBST) $$h > $(DESTDIR)$(LIBEXECDIR)/$$(basename $$h); \
+	    chmod 0755 $(DESTDIR)$(LIBEXECDIR)/$$(basename $$h); done
+	for u in install/fedora/bin/*; do \
+	    $(SUBST) $$u > $(DESTDIR)$(BINDIR)/$$(basename $$u); \
+	    chmod 0755 $(DESTDIR)$(BINDIR)/$$(basename $$u); done
+	$(SUBST) packaging/pidp10-fetch-images.sh > $(DESTDIR)$(BINDIR)/pidp10-fetch-images
+	chmod 0755 $(DESTDIR)$(BINDIR)/pidp10-fetch-images
+	@# read-only data: boot scripts (the images themselves are fetched into
+	@# $(STATEDIR) by pidp10-fetch-images, never shipped here)
+	for s in systems/*/; do \
+	    n=$$(basename $$s); \
+	    [ -f $$s/boot.pi ] || [ -f $$s/boot.pidp ] || continue; \
+	    install -d $(DESTDIR)$(DATADIR)/systems/$$n; \
+	    for f in $$s*.pi $$s*.pidp $$s*.txt $$s*.pdf; do \
+	        [ -f "$$f" ] || continue; \
+	        install -m 0644 $$f $(DESTDIR)$(DATADIR)/systems/$$n/$$(basename $$f); \
+	    done; done
+	install -m 0644 systems/selections $(DESTDIR)$(DATADIR)/systems/
+	for c in cbridge.conf chaos-hosts init.ini gt40.simh imlac.simh ssv22.iml; do \
+	    [ -f bin/$$c ] && install -m 0644 bin/$$c $(DESTDIR)$(DATADIR)/conf/$$c; done
+	install -m 0644 bin/sounds/*.wav $(DESTDIR)$(DATADIR)/sounds/
+	@# configuration, units and OS integration
+	$(SUBST) install/fedora/etc/pidp10.conf > $(DESTDIR)$(SYSCONFDIR)/pidp10/pidp10.conf
+	chmod 0644 $(DESTDIR)$(SYSCONFDIR)/pidp10/pidp10.conf
+	for u in install/fedora/systemd/system/*; do \
+	    $(SUBST) $$u > $(DESTDIR)$(UNITDIR)/$$(basename $$u); \
+	    chmod 0644 $(DESTDIR)$(UNITDIR)/$$(basename $$u); done
+	for u in install/fedora/systemd/user/*; do \
+	    $(SUBST) $$u > $(DESTDIR)$(USERUNITDIR)/$$(basename $$u); \
+	    chmod 0644 $(DESTDIR)$(USERUNITDIR)/$$(basename $$u); done
+	for p in packaging/systemd/*.preset; do \
+	    b=$$(basename $$p); \
+	    case $$b in \
+	    user-*) $(SUBST) $$p > $(DESTDIR)$(USERPRESETDIR)/$${b#user-} ;; \
+	    *)      $(SUBST) $$p > $(DESTDIR)$(PRESETDIR)/$$b ;; \
+	    esac; done
+	chmod 0644 $(DESTDIR)$(PRESETDIR)/*.preset $(DESTDIR)$(USERPRESETDIR)/*.preset
+	install -m 0644 install/fedora/sysusers.d/30-pidp10.conf $(DESTDIR)$(SYSUSERSDIR)/30-pidp10.conf
+	$(SUBST) install/fedora/tmpfiles.d/pidp10.conf > $(DESTDIR)$(TMPFILESDIR)/pidp10.conf
+	chmod 0644 $(DESTDIR)$(TMPFILESDIR)/pidp10.conf
+	install -m 0644 install/fedora/udev.d/99-pidp10.rules $(DESTDIR)$(UDEVDIR)/
+	install -m 0644 install/fedora/systemd/logind.conf.d/60-pidp10-rt.conf $(DESTDIR)$(LOGINDDIR)/
+	install -m 0644 install/fedora/firewalld/pidp10.xml $(DESTDIR)$(FIREWALLDIR)/
+	@# desktop integration
+	for d in install/desktop-files/*.desktop; do \
+	    install -m 0644 $$d $(DESTDIR)$(APPSDIR)/$$(basename $$d); done
+	for i in install/icons/*-48.png; do \
+	    [ -f $$i ] && install -m 0644 $$i $(DESTDIR)$(ICONSDIR)/48x48/apps/$$(basename $$i); done
+	for i in install/icons/*.svg; do \
+	    [ -f $$i ] && install -m 0644 $$i $(DESTDIR)$(ICONSDIR)/scalable/apps/$$(basename $$i); done
+	install -m 0644 install/TELETYPE1945-1985.ttf $(DESTDIR)$(FONTSDBIR)/
+	install -m 0644 install/vt52.otf $(DESTDIR)$(FONTSDBIR)/
+	install -m 0644 install/view.json $(DESTDIR)$(DATADIR)/
+	install -m 0644 install/pidp10tilix.conf $(DESTDIR)$(DATADIR)/
+ifeq ($(WITH_VENDORED),yes)
+	install -d $(DESTDIR)$(VENDORBINDIR)
+	for v in $(VENDORED); do \
+	    [ -f bin/$$v ] && install -m 0755 bin/$$v $(DESTDIR)$(VENDORBINDIR)/$$v; done
+	install -m 0755 bin/gateway.sh $(DESTDIR)$(VENDORBINDIR)/gateway.sh
+endif
+ifeq ($(WITH_STY),yes)
+	install -m 0755 $(B)/sty $(DESTDIR)$(BINDIR)/sty
+	install -m 0755 $(B)/st $(DESTDIR)$(BINDIR)/st
+endif
+
+clean:
+	$(MAKE) -C $(PDP10D) clean
+	rm -rf $(B)
+
+.PHONY: clean clean-all
+clean-all: clean
+	-rm -rf $(PDP10D)/BIN
