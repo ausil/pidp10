@@ -1,0 +1,51 @@
+#!/bin/bash
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Teletype Model 33 (sty) attached to the PDP-10 console.
+#
+#   PIDP10_STY_SILENT=1  -> plain terminal + telnet instead (was: `pdp telcon`)
+#   PIDP10_CONSOLE_PORT  -> console port, default 1025
+#
+# Runs in the session (SDL window + PipeWire samples). sty's sound samples come
+# from $PIDP10_SOUNDS (a build-time define in src/sty33, overridable in the
+# environment), so unlike upstream this does not depend on being started from a
+# particular working directory - upstream hardcoded /opt/pidp10/bin/sounds into
+# sounds.c, so the teletype was silent unless the tree sat at that exact path.
+
+set -euo pipefail
+
+# Operator settings first (the same file the units load through EnvironmentFile=),
+# then the layout defaults. The conf file is authoritative for policy - what to
+# boot, which panel driver, which console port - and the layout is not in it, so
+# a PIDP10_STATE set on the command line still picks a scratch tree.
+[ -r /etc/pidp10/pidp10.conf ] && . /etc/pidp10/pidp10.conf
+: "${PIDP10_LIBEXEC:=/usr/libexec/pidp10}"
+: "${PIDP10_BIN:=/usr/lib/pidp10/bin}"
+: "${PIDP10_STATE:=/var/lib/pidp10}"
+: "${PIDP10_SOUNDS:=/usr/share/pidp10/sounds}"
+: "${PIDP10_CONSOLE_PORT:=1025}"
+
+PIDP10_STY_SILENT=${PIDP10_STY_SILENT:-0}
+
+if [ "${PIDP10_STY_SILENT}" = "1" ]; then
+	exec "$PIDP10_LIBEXEC/pidp10-terminal" telnet localhost "$PIDP10_CONSOLE_PORT"
+fi
+
+sty=$(command -v sty || true)
+[ -x "$sty" ] || sty=$PIDP10_BIN/sty
+[ -x "$sty" ] || sty=${PIDP10_HOME:-}/src/sty33/sty
+[ -x "$sty" ] || sty=${PIDP10_HOME:-}/bin/sty
+[ -x "$sty" ] || { echo "pidp10-teletype: sty not found (build src/sty33)" >&2; exit 127; }
+
+# The pidp10-ui package installs TELETYPE1945-1985.ttf under
+# /usr/share/fonts/pidp10; warn rather than silently drawing in a fallback face.
+if ! fc-list 2>/dev/null | grep -qi teletype; then
+	echo "pidp10-teletype: warning - TELETYPE font not installed, sty will use a fallback face" >&2
+fi
+
+# sty still resolves sounds/ relative to cwd on some builds; the state dir is
+# writable and is where the engine runs too, unlike upstream's bin/.
+mkdir -p "$PIDP10_STATE"
+cd "$PIDP10_STATE"
+export PIDP10_SOUNDS
+exec "$sty" -e telnet localhost "$PIDP10_CONSOLE_PORT"

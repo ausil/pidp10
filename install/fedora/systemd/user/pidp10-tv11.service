@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Knight-TV display server (the KT10 / "tvcon" side of the ITS graphics).
+# Runs in the session because it opens an SDL window.
+#
+# Upstream launched this from inside the simh boot script with
+#   !pgrep tv11 && pkill -2 tv11 ; screen -dmS tv11 ...
+# which is three hacks in one line: a pkill that fights any other manager,
+# an ad-hoc supervisor (screen), and a daemon whose lifetime is tied to the
+# PDP-10's. As a unit it is independent, restartable and logged.
+#
+# The boot scripts skip their own launch when PIDP10_MANAGED=1 is in the
+# environment (see install/fedora/libexec/pidp10-spawn).
+
+[Unit]
+Description=PiDP-10 Knight TV display server (tv11)
+After=graphical-session.target
+PartOf=pidp10.target
+Before=pidp10.service pidp10@.service
+
+# tv11 ships in pidp10-vendored; skip cleanly when it is not installed.
+ConditionPathExists=/usr/lib/pidp10/bin/tv11
+
+[Service]
+Type=exec
+EnvironmentFile=-/etc/pidp10/pidp10.conf
+Environment=DISPLAY=:0
+Environment=SDL_VIDEODRIVER=x11
+WorkingDirectory=/var/lib/pidp10
+ExecStart=/usr/lib/pidp10/bin/tv11 -s 4 -p 10011 localhost
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+PrivateTmp=no
+
+[Install]
+WantedBy=pidp10.target

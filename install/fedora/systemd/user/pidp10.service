@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Default-booting twin of pidp10@.service: same everything, but the boot
+# number comes from PIDP10_BOOT in /etc/pidp10/pidp10.conf instead of the
+# instance name. This is what pidp10.target pulls in, so
+#
+#   pdpcontrol start            == systemctl --user start pidp10.target
+#   pdpcontrol start 1          == systemctl --user start pidp10@1.service
+#
+# (upstream's `pdpcontrol start <n>` existed only because a box without the
+# front panel cannot read the boot switch; under systemd it becomes an
+# instance name.)
+#
+# Keep this file in sync with pidp10@.service - it is a copy with ExecStart
+# changed, kept separate because systemd has no "include" directive.
+
+[Unit]
+Description=PiDP-10 PDP-10 engine (default boot from /etc/pidp10/pidp10.conf)
+Documentation=https://obsolescence.dev/pdp10
+After=graphical-session.target pidp10-tv11.service
+Wants=pidp10-tv11.service
+PartOf=pidp10.target
+
+[Service]
+Type=exec
+EnvironmentFile=-/etc/pidp10/pidp10.conf
+# The boot scripts in systems/*/boot.* must not spawn cbridge/tv11 themselves
+# when the daemons are units; pidp10-spawn no-ops on this. Set here rather than in
+# /etc/pidp10/pidp10.conf, where it would also disable them for `pdp con` runs
+# straight from a shell.
+Environment=PIDP10_MANAGED=1
+Environment=DISPLAY=:0
+Environment=SDL_VIDEODRIVER=x11
+Environment=QT_QPA_PLATFORM=xcb
+ExecStart=/usr/libexec/pidp10/pidp10-engine
+ExecStop=/usr/libexec/pidp10/pidp10-stop
+Restart=no
+RestartSec=5
+TimeoutStartSec=120
+TimeoutStopSec=25
+KillMode=mixed
+KillSignal=SIGTERM
+SendSIGKILL=yes
+FinalKillSignal=SIGKILL
+PrivateTmp=no
+LimitRTPRIO=99
+Nice=-10
+CPUWeight=1000
+CPUAffinity=0-3
+ReadWritePaths=/var/lib/pidp10 /var/log/pidp10
+
+[Install]
+WantedBy=pidp10.target

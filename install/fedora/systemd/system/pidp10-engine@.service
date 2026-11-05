@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Headless twin of the engine: run the PDP-10 from the SYSTEM manager on a box
+# with no monitor and no X session (e.g. a Pi 5 that only drives the front
+# panel, administered over the network). Use this one when you do NOT want the
+# SDL windows; the type340/DD displays and tvcon then simply are not
+# available, and the console is telnet localhost:1025.
+#
+# Capability story: a user manager cannot put capabilities on a process, so
+# CAP_SYS_NICE for the blinkenlight thread has to come from here. This is the
+# only place we ask for privileges, and it is a *capability*, not setuid root
+# (the install.sh "chmod +s bin/pidp10 bin/pdp10-ka" hack).
+#
+#   systemctl enable --now pidp10-engine@1.service
+
+[Unit]
+Description=PDP-10 engine, headless (boot %i)
+Documentation=https://obsolescence.dev/pdp10
+After=network-online.target pidp10-cbridge.service
+Wants=network-online.target
+Conflicts=pidp10.service
+
+[Service]
+Type=exec
+EnvironmentFile=-/etc/pidp10/pidp10.conf
+# The boot scripts in systems/*/boot.* must not spawn cbridge/tv11 themselves
+# when the daemons are units; pidp10-spawn no-ops on this. Set here rather than in
+# /etc/pidp10/pidp10.conf, where it would also disable them for `pdp con` runs
+# straight from a shell.
+Environment=PIDP10_MANAGED=1
+# No display: force simh/SDL into a null driver so it never blocks on X.
+Environment=SDL_VIDEODRIVER=dummy
+ExecStart=/usr/libexec/pidp10/pidp10-engine %i
+ExecStop=/usr/libexec/pidp10/pidp10-stop
+Restart=no
+RestartSec=5
+TimeoutStopSec=25
+KillMode=mixed
+KillSignal=SIGTERM
+SendSIGKILL=yes
+PrivateTmp=no
+
+User=pidp10
+Group=pidp10
+SupplementaryGroups=gpio i2c
+NoNewPrivileges=yes
+AmbientCapabilities=CAP_SYS_NICE
+CapabilityBoundingSet=CAP_SYS_NICE
+LimitRTPRIO=99
+Nice=-10
+CPUAffinity=0-3
+
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# simh writes its disk images, tapes and logs inside the tree.
+ReadWritePaths=/var/lib/pidp10 /var/log/pidp10
+# /dev/gpiochip* is group-writable (group gpio) - no PrivateDevices=, which
+# would mount a private /dev without them.
+PrivateDevices=no
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,45 @@
+#!/bin/bash
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Run "$@" in whatever terminal emulator this Fedora box has.
+#
+# Replaces the hardcoded `lxterminal --command=...` lines in bin/pdp.sh (LXDE
+# is not what Fedora Workstation ships).
+#
+# NOTE for systemd Type=exec users: gnome-terminal and konsole are
+# client/server - the invoked process forks into the running shell and exits,
+# so systemd would consider the service exited immediately. Put this behind a
+# Type=oneshot/RemainAfterExit=yes unit, or use tilix/xterm (both stay in the
+# foreground; tilix needs --disable-single-execute).
+
+pick() {
+	if command -v tilix > /dev/null; then
+		printf '%s\n' 'tilix --disable-single-execute --'
+		return 0
+	fi
+	if command -v xterm > /dev/null; then
+		printf '%s\n' xterm -e
+		return 0
+	fi
+	if command -v xfce4-terminal > /dev/null; then
+		printf '%s\n' xfce4-terminal --hold --command
+		return 0
+	fi
+	if command -v konsole > /dev/null; then
+		printf '%s\n' konsole -e
+		return 0
+	fi
+	if command -v gnome-terminal > /dev/null; then
+		printf '%s\n' gnome-terminal --
+		return 0
+	fi
+	if command -v lxterminal > /dev/null; then
+		printf '%s\n' lxterminal --command
+		return 0
+	fi
+	return 1
+}
+
+term=$(pick) || { echo "pidp10-terminal: no terminal emulator found (dnf install tilix or xterm)" >&2; exit 127; }
+# shellcheck disable=SC2086 # word splitting is the point here
+exec $term "$@"

@@ -1,0 +1,48 @@
+#!/bin/bash
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Polite power-off for the PDP-10 engine (ExecStop=).
+#
+# Replaces bin/stop.expect, which did: spawn "screen -x pidp10", send Ctrl-E
+# twice (the second one for a "script-in-script" quirk), send "exit", and left
+# a detached screen session behind for pkill -9 to clean up.
+#
+# The simh console is a telnet listener ($PIDP10_CONSOLE_PORT, set by
+# "set cons -u telnet=1025" in the boot scripts), so we can do the same thing
+# without expect(1), without screen(1) and without a PTY: Ctrl-E enters the
+# simh prompt, "exit" quits it. That matters because simh buffers disk/tape
+# images; SIGKILL-ing it can lose writes.
+#
+# This is still a POWER switch, not an OS shutdown: shut ITS down from the
+# console first (or use `pdpcontrol halt`).
+#
+# usage: pidp10-stop [mainpid]
+
+PIDP10_CONSOLE_PORT=${PIDP10_CONSOLE_PORT:-1025}
+PIDP10_STOP_CMD=${PIDP10_STOP_CMD:-exit}
+pid=${1:-${MAINPID:-}}
+
+console_cmd() {
+	# $1 = raw string to send. Bash /dev/tcp instead of expect/telnet.
+	local data=$1
+	exec 3<>/dev/tcp/127.0.0.1/"$PIDP10_CONSOLE_PORT" || return 1
+	printf '%s' "$data" >&3
+	# let simh echo/process it
+	timeout 3 cat <&3 > /dev/null 2>&1
+	exec 3<&- 3>&-
+}
+
+# 0x05 = Ctrl-E = "enter the simh command prompt"
+console_cmd $'\x05' || { echo "pidp10-stop: console port $PIDP10_CONSOLE_PORT not reachable, falling back to signals"; }
+console_cmd "${PIDP10_STOP_CMD}"$'\r' || true
+
+# Wait for the main process to go away; systemd's TimeoutStopSec is the
+# backstop, so keep this shorter than it.
+if [ -n "$pid" ]; then
+	for _ in $(seq 1 15); do
+		kill -0 "$pid" 2>/dev/null || exit 0
+		sleep 1
+	done
+	echo "pidp10-stop: pid $pid still alive after 15s, letting systemd escalate to SIGTERM/SIGKILL" >&2
+fi
+exit 0

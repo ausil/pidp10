@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# `pdp view` as a service: the all-in-one Tilix layout (install/view.json) with
+# console, teletype and a spare shell. Replaces the nohup'd tilix in
+# bin/pdp.sh, which nobody could stop, restart or look at the logs of.
+#
+# --disable-single-execute is required: Tilix is single-instance, so a plain
+# "tilix" forks, hands the job to the running instance and exits, which would
+# make Type=exec think the service died instantly.
+#
+# First run only - the Tilix profile ids in view.json must exist in dconf:
+#   dconf load /com/gexperts/Tilix/ < $PIDP10_HOME/install/pidp10tilix.conf
+
+[Unit]
+Description=PiDP-10 all-in-one Tilix view
+After=graphical-session.target pidp10.service
+PartOf=pidp10.target
+
+[Service]
+Type=exec
+EnvironmentFile=-/etc/pidp10/pidp10.conf
+Environment=DISPLAY=:0
+Environment=QT_QPA_PLATFORM=xcb
+Environment=TERM=xterm-256color
+ExecStart=/usr/bin/tilix --disable-single-execute -s /usr/share/pidp10/view.json
+Restart=no
+TimeoutStopSec=10
+
+[Install]
+WantedBy=pidp10.target

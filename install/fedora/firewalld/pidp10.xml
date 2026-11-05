@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  /usr/lib/firewalld/services/pidp10.xml
+
+  Inbound ports the PiDP-10 farm listens on. Everything the simulators expose
+  is a TCP telnet-style line (simh TMXR) or a UDP Chaosnet tunnel; without
+  this, other machines running `rpdp tvcon` / `rpdp vt52` just hang, which is
+  the single most common "it worked on Raspbian" complaint.
+
+  Sources of these numbers: systems/*/boot.pidp (set cons/at -u line=..),
+  bin/cbridge.conf (chudp 44041) and bin/gateway.sh (44042/3150).
+
+    install -D -m 0644 firewalld/pidp10.xml /etc/firewalld/services/pidp10.xml
+    firewall-cmd --reload
+    firewall-cmd --permanent --add-service=pidp10 && firewall-cmd --reload
+-->
+<service>
+  <short>PiDP-10 emulator farm</short>
+  <description>PDP-10 console, terminal lines, tape/disk servers and Chaosnet tunnels for the PiDP-10 project.</description>
+
+  <!-- simh console (SET CONSOLE TELNET) -->
+  <port protocol="tcp" port="1025"/>
+  <!-- TMXR lines: MTY/DPK/CTY/KT10 terminal concentrators -->
+  <port protocol="tcp" port="10000-10025"/>
+  <port protocol="tcp" port="10040"/>
+  <port protocol="tcp" port="10077"/>
+  <port protocol="tcp" port="10431"/>
+  <port protocol="tcp" port="10602"/>
+  <port protocol="tcp" port="11000"/>
+  <port protocol="tcp" port="11600"/>
+  <!-- netmem / netcons / apr services used by ITS -->
+  <port protocol="tcp" port="12000-12200"/>
+  <port protocol="tcp" port="12400"/>
+  <port protocol="tcp" port="13000"/>
+  <port protocol="tcp" port="14000-14100"/>
+  <port protocol="tcp" port="15200-15700"/>
+  <port protocol="tcp" port="16000-16500"/>
+  <port protocol="tcp" port="17000-17100"/>
+  <port protocol="tcp" port="17400"/>
+  <port protocol="tcp" port="17700"/>
+  <!-- Chaosnet over UDP (cbridge / gw) -->
+  <port protocol="udp" port="44041-44050"/>
+  <port protocol="udp" port="3150"/>
+</service>

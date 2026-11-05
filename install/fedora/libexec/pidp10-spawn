@@ -1,0 +1,65 @@
+#!/bin/bash
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Guard for the "!screen -dmS ..." lines inside systems/*/boot.*.
+#
+# Those lines made the simh boot script its own process supervisor:
+#   !pgrep cbridge && pkill -2 cbridge && echo stopped old cbridge && sleep 3
+#   !screen -dmS cbridge /opt/pidp10/bin/cbridge -c .../cbridge.conf
+# Under systemd that is actively harmful: the pkill kills the unit's process
+# (triggering a restart loop) and screen detaches the daemon from any
+# supervisor. So the boot scripts call this instead, and this script no-ops
+# when the daemons are managed as units (PIDP10_MANAGED=1, exported by
+# pidp10-engine and therefore visible to simh's "!shell" escapes).
+#
+# usage: pidp10-spawn <name> <command> [args...]
+#   managed  -> exit 0 without doing anything
+#   unmanaged-> run <command> detached, like the old screen line did
+
+name=${1:?usage: pidp10-spawn NAME COMMAND...}
+shift
+
+if [ -n "${PIDP10_MANAGED:-}" ]; then
+	echo "pidp10-spawn: $name is a systemd unit, not starting it from the boot script"
+	exit 0
+fi
+
+[ $# -ge 1 ] || { echo "pidp10-spawn: nothing to run for $name" >&2; exit 1; }
+
+# Operator settings first (the same file the units load through EnvironmentFile=),
+# then the layout defaults. The conf file is authoritative for policy - what to
+# boot, which panel driver, which console port - and the layout is not in it, so
+# a PIDP10_STATE set on the command line still picks a scratch tree.
+[ -r /etc/pidp10/pidp10.conf ] && . /etc/pidp10/pidp10.conf
+: "${PIDP10_BIN:=/usr/lib/pidp10/bin}"
+: "${PIDP10_STATE:=/var/lib/pidp10}"
+
+# The boot script says `cbridge`, not `/usr/lib/pidp10/bin/cbridge`: a bare
+# name is looked up on PATH and then in the vendored directory, so the same
+# boot script works from a checkout and from a package install.
+cmd=$1; shift
+if [ "${cmd#*/*}" = "$cmd" ]; then
+	found=$(command -v "$cmd" 2>/dev/null || true)
+	[ -n "$found" ] || found=${PIDP10_BIN:-}/$cmd
+	[ -x "$found" ] || found=${PIDP10_HOME:-}/bin/$cmd
+	[ -x "$found" ] || { echo "pidp10-spawn: $cmd not found (package pidp10-vendored?)" >&2; exit 127; }
+	cmd=$found
+fi
+
+# This is what the deleted "!pgrep X && pkill -2 X" lines in the boot scripts
+# did - here, where we know no systemd unit owns the process. Doing it from the
+# boot script unconditionally was how a restart loop was born.
+base=$(basename "$cmd")
+if pgrep -x "$base" >/dev/null 2>&1; then
+	echo "pidp10-spawn: stopping stale $base"
+	pkill -x -TERM "$base" 2>/dev/null || true
+	sleep 1
+fi
+
+# Fallback for people who still start the engine by hand: no screen needed,
+# setsid + nohup is enough to survive the simh process.
+mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/pidp10"
+log=${XDG_STATE_HOME:-$HOME/.local/state}/pidp10/$name.log
+setsid nohup "$cmd" "$@" >> "$log" 2>&1 < /dev/null &
+echo "pidp10-spawn: started $name (log: $log)"
+exit 0

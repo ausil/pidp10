@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# The PDP-10 engine itself: simh KA10/KI10/KL10 with the front-panel thread.
+#
+# WHY A USER SERVICE AND NOT A SYSTEM SERVICE
+#   The engine opens SDL windows (type340, DD display) and the front-panel
+#   multiplexing thread must run SCHED_FIFO. Both of those are much easier in
+#   the graphical session:
+#     * SDL needs DISPLAY/XAUTHORITY, which only exist in the user session
+#       (GNOME's Xwayland lives in the user's own runtime dir).
+#     * SCHED_FIFO up to RLIMIT_RTPRIO needs no privileges at all, so instead
+#       of the upstream "chmod +s + setcap cap_sys_nice" dance we just raise
+#       the rtprio limit for the session (see 60-pidp10-rt.conf).
+#   The panel GPIOs are reachable because pidp10 is in the "gpio" group.
+#
+# headless box (no monitor, no panel)? use the system-manager twin:
+#   systemd/system/pidp10-engine@.service
+#
+# Install to ~/.config/systemd/user/ or /usr/lib/systemd/user/
+#
+#   systemctl --user enable --now pidp10@1.service     # ITS
+#   systemctl --user status pidp10@1
+#   journalctl --user -u pidp10@1 -f
+
+[Unit]
+Description=PDP-10 front-panel emulator (boot %i)
+Documentation=https://obsolescence.dev/pdp10
+After=graphical-session.target pidp10-tv11.service
+Wants=pidp10-tv11.service
+PartOf=pidp10.target
+
+[Service]
+Type=exec
+# EnvironmentFile may not exist yet on a fresh checkout; the leading '-'
+# makes a missing file non-fatal.
+EnvironmentFile=-/etc/pidp10/pidp10.conf
+# The boot scripts in systems/*/boot.* must not spawn cbridge/tv11 themselves
+# when the daemons are units; pidp10-spawn no-ops on this. Set here rather than in
+# /etc/pidp10/pidp10.conf, where it would also disable them for `pdp con` runs
+# straight from a shell.
+Environment=PIDP10_MANAGED=1
+# GNOME/gdm: Xwayland is on :0. If your session uses another display,
+# override with: systemctl --user set-environment DISPLAY=:1
+Environment=DISPLAY=:0
+Environment=SDL_VIDEODRIVER=x11
+Environment=QT_QPA_PLATFORM=xcb
+# Boot number from the instance name; empty instance falls back to
+# PIDP10_BOOT in /etc/pidp10/pidp10.conf.
+ExecStart=/usr/libexec/pidp10/pidp10-engine %i
+# Politely ask simh to power down through its console port instead of
+# SIGKILL-ing it (replaces the stop.expect + screen hack).
+ExecStop=/usr/libexec/pidp10/pidp10-stop
+Restart=no
+RestartSec=5
+TimeoutStartSec=120
+TimeoutStopSec=25
+KillMode=mixed
+KillSignal=SIGTERM
+SendSIGKILL=yes
+FinalKillSignal=SIGKILL
+# Needed because cbridge/gateway talk through /tmp/chaos_stream.
+PrivateTmp=no
+
+# --- front panel timing -------------------------------------------------
+# Unprivileged SCHED_FIFO: sched_setscheduler() is allowed up to
+# RLIMIT_RTPRIO without any capability, which is why this works as a user
+# service. Pair with logind's DefaultLimitRTPRIO.
+LimitRTPRIO=99
+Nice=-10
+CPUWeight=1000
+# The blinkenlight thread is latency sensitive; keep the CPU governor busy
+# and leave one core for it on a Pi 5.
+CPUAffinity=0-3
+
+# --- filesystem ---------------------------------------------------------
+# The boot scripts cd into $PIDP10_HOME/systems/<sys> and simh writes disk
+# images + logs under the tree, so the tree has to be writable.
+ReadWritePaths=/var/lib/pidp10 /var/log/pidp10
+
+[Install]
+WantedBy=pidp10.target

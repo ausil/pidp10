@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Interactive simh console in a terminal.
+#
+# Upstream had no such unit: `pdp` with no arguments ran `screen -Dr pidp10`,
+# i.e. it re-attached the screen session that pdpcontrol.sh had created. With
+# systemd as the supervisor the console *is* the telnet listener the boot
+# scripts create ("set cons -u telnet=1025"), so this unit is just a terminal
+# around it - and unlike the screen session it can be opened from several
+# places at once (well, one TMXR connection at a time, but at least it is
+# stateless).
+#
+# Type=oneshot + RemainAfterExit because a terminal emulator may be
+# client/server (gnome-terminal, konsole); see libexec/pidp10-terminal.
+
+[Unit]
+Description=PiDP-10 simh console terminal
+After=graphical-session.target pidp10.service
+PartOf=pidp10.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Default, not a demand: the conf file is loaded after this and wins.
+Environment=PIDP10_CONSOLE_PORT=1025
+EnvironmentFile=-/etc/pidp10/pidp10.conf
+Environment=DISPLAY=:0
+Environment=TERM=xterm-256color
+ExecStart=/usr/libexec/pidp10/pidp10-terminal telnet localhost ${PIDP10_CONSOLE_PORT}
+ExecStop=/usr/bin/true

@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Chaosnet bridge (bictorv's cbridge). Pure network daemon: no window, no
+# GPIO, so it belongs in the system manager where it gets its own
+# sandbox instead of piggy-backing on whoever started the PDP-10.
+#
+# Upstream started it from inside the ITS boot script:
+#   !screen -dmS cbridge /usr/lib/pidp10/bin/cbridge -c /usr/share/pidp10/conf/cbridge.conf
+# with a preceding "!pgrep cbridge && pkill -2 cbridge && sleep 3", and the
+# comment "bug? seems we must be in cbridge home dir". Hence WorkingDirectory.
+#
+# Note cbridge publishes /tmp/chaos_stream, which bin/gateway.sh waits for, so
+# PrivateTmp must stay off.
+#
+# Install to /usr/lib/systemd/system/ ;
+#   systemctl enable --now pidp10-cbridge.service
+
+[Unit]
+Description=PiDP-10 Chaosnet bridge
+Documentation=https://github.com/PDP-10/its
+After=network-online.target
+Wants=network-online.target
+Before=pidp10.target
+
+# cbridge ships in pidp10-vendored (no source in this tree). Without that
+# package the unit is skipped instead of entering a start failure loop.
+ConditionPathExists=/usr/lib/pidp10/bin/cbridge
+
+[Service]
+Type=exec
+EnvironmentFile=-/etc/pidp10/pidp10.conf
+User=pidp10
+Group=pidp10
+SupplementaryGroups=gpio
+WorkingDirectory=/var/lib/pidp10
+ExecStart=/usr/lib/pidp10/bin/cbridge -c /usr/share/pidp10/conf/cbridge.conf
+ExecStartPost=/usr/bin/sleep 1
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+PrivateTmp=no
+
+# Hardening that still lets cbridge bind its UDP port and write
+# /tmp/chaos_stream. If a future cbridge needs more, prefer loosening
+# ReadWritePaths over turning everything off.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ReadWritePaths=/var/lib/pidp10 /tmp/chaos_stream
+
+[Install]
+WantedBy=multi-user.target

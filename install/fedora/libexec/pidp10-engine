@@ -1,0 +1,172 @@
+#!/bin/bash
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Start the PDP-10 engine in the foreground (for systemd).
+#
+# Replaces do_start() from bin/pdpcontrol.sh. Differences that matter:
+#   * no screen(1): the simh console is already a telnet listener on
+#     $PIDP10_CONSOLE_PORT (the boot scripts do "set cons -u telnet=1025"), so
+#     `pdp` / `pdpcontrol console` talk to that instead of detaching a screen
+#     session. systemd is the supervisor now.
+#   * no setuid: the caller (systemd) decides privileges.
+#   * boot number comes from $1 (systemd instance) or PIDP10_BOOT, and the
+#     front-panel boot switch is only consulted when the panel is live.
+#   * the simulator runs with cwd = the state tree, so images, tapes and logs
+#     land under /var/lib/pidp10 and never next to the executables.
+#
+# usage: pidp10-engine [boot-number]
+
+set -euo pipefail
+
+# Operator settings first (the same file the units load through EnvironmentFile=),
+# then the layout defaults. The conf file is authoritative for policy - what to
+# boot, which panel driver, which console port - and the layout is not in it, so
+# a PIDP10_STATE set on the command line still picks a scratch tree.
+[ -r /etc/pidp10/pidp10.conf ] && . /etc/pidp10/pidp10.conf
+: "${PIDP10_PREFIX:=/usr/share/pidp10}"
+: "${PIDP10_LIBEXEC:=/usr/libexec/pidp10}"
+: "${PIDP10_BIN:=/usr/lib/pidp10/bin}"
+: "${PIDP10_STATE:=/var/lib/pidp10}"
+: "${PIDP10_SYSTEMS:=$PIDP10_PREFIX/systems}"
+: "${PIDP10_SELECTIONS:=$PIDP10_SYSTEMS/selections}"
+: "${PIDP10_CONSOLE_PORT:=1025}"
+
+PIDP10_PANEL=${PIDP10_PANEL:-auto}
+PIDP10_BOOTSCRIPT=${PIDP10_BOOTSCRIPT:-auto}
+SELECTIONS=$PIDP10_SELECTIONS
+
+die() { echo "pidp10-engine: $*" >&2; exit 1; }
+
+[ -r "$SELECTIONS" ] || die "$SELECTIONS not found (is pidp10 installed, or set PIDP10_HOME to a checkout?)"
+
+# ---------------------------------------------------------------------------
+# 1. boot number
+# ---------------------------------------------------------------------------
+instance=${1:-}
+have_instance=0
+if [ -n "$instance" ]; then
+	have_instance=1
+	boot_number=$instance          # systemd instances are passed in decimal,
+	                               # but accept octal too (0200 == tops20)
+	[[ $boot_number =~ ^[0-9]+$ ]] || die "bad boot number '$instance'"
+	if [[ $boot_number =~ ^0[0-7]+$ ]]; then
+		boot_number=$((8#$boot_number))
+	fi
+else
+	boot_number=${PIDP10_BOOT:-1}
+fi
+
+# ---------------------------------------------------------------------------
+# 2. front panel present?
+# ---------------------------------------------------------------------------
+panel_live=0
+case "$PIDP10_PANEL" in
+	gpiod|gpiomem) panel_live=1 ;;
+	sim|none)      panel_live=0 ;;
+	auto)
+		# Ask the code that would have to drive the panel, do not guess from
+		# the shell. The heuristic this replaces was
+		#     gpioinfo | grep -q 'rp1\|gpio'
+		# which is true on every machine that has GPIO at all: a Qualcomm
+		# laptop has eleven gpiochips, most of them PMIC power rails. The
+		# engine then believed it had a cabinet and waited in the .pidp boot
+		# script for a READ IN press nobody could make.
+		#
+		# pidp-gpio-probe implements the same test the simulator uses
+		# (Broadcom controller, enough lines, every panel line free) and
+		# honours PIDP10_GPIO_CHIP, so there is one answer, not two.
+		probe=$(command -v pidp-gpio-probe || true)
+		[ -x "$probe" ] || probe=$PIDP10_BIN/pidp-gpio-probe
+		[ -x "$probe" ] || probe=$(dirname "$PIDP10_PREFIX")/bin/pidp-gpio-probe
+		if [ -x "$probe" ]; then
+			"$probe" --check >/dev/null 2>&1 && panel_live=1
+		else
+			# No probe: assume no cabinet. Booting to the console is
+			# wrong far less often than waiting forever for a button.
+			echo "pidp10-engine: pidp-gpio-probe not found; assuming no" >&2
+			echo "pidp10-engine: front panel (build src/utils/pinctrl, or set" >&2
+			echo "pidp10-engine: PIDP10_PANEL=gpiod to override)" >&2
+		fi
+		;;
+esac
+
+# With a live panel and no explicit boot number, ask the maintenance panel
+# switch what to boot (that is what scansw10 is for).
+if [ "$have_instance" -eq 0 ] && [ "$panel_live" -eq 1 ] && \
+   [ -x "$(command -v scansw10 || true)" ]; then
+	if sw=$(scansw10 </dev/null 2>/dev/null); then
+		boot_number=$sw
+		echo "pidp10-engine: front panel switch selects boot $boot_number"
+	fi
+fi
+
+# ---------------------------------------------------------------------------
+# 3. system name + which engine binary
+# ---------------------------------------------------------------------------
+sys_oct=$(printf '%04o' "$boot_number")
+sel=$(awk -v n="$sys_oct" '$1 == n { print $2; found=1; exit }
+                          END { if (!found) print "hills-blinky" }' < "$SELECTIONS")
+
+# The boot script is read-only data; the images it attaches live in the state
+# tree and may legitimately be missing until pidp10-fetch-images has run, so
+# only the former is required to be present here.
+bootdir=$PIDP10_SYSTEMS/$sel
+[ -d "$bootdir" ] || die "no such system directory: $bootdir"
+
+if   [ "$boot_number" -ge 64 ]; then pidp_bin=pdp10-kl
+elif [ "$boot_number" -ge 16 ]; then pidp_bin=pdp10-ki
+else                                  pidp_bin=pdp10-ka
+fi
+
+# ---------------------------------------------------------------------------
+# 4. boot .pidp (wait for READ IN on the panel) or .pi (auto-boot from PTR)
+# ---------------------------------------------------------------------------
+case "$PIDP10_BOOTSCRIPT" in
+	pi)   ext=.pi  ;;
+	pidp) ext=.pidp ;;
+	auto)
+		# Upstream tied this to "was a boot number given", i.e. `pdpcontrol
+		# start 1` means "I am not sitting in front of the panel". Keep that
+		# behaviour, but require a live panel for .pidp as well.
+		if [ "$have_instance" -eq 0 ] && [ "$panel_live" -eq 1 ]; then
+			ext=.pidp
+		else
+			ext=.pi
+		fi
+		;;
+	*) die "PIDP10_BOOTSCRIPT must be pi|pidp|auto" ;;
+esac
+
+bootfile=$bootdir/boot$ext
+[ -f "$bootfile" ] || die "missing $bootfile"
+
+# Where the simulator runs. The boot scripts do `cd systems/<name>` relative to
+# here, so this is what makes the images in the STATE tree the ones that get
+# attached - which is the whole point of splitting /usr/share from /var/lib.
+statedir=$(pidp10_system_dir "$sel")
+mkdir -p "$statedir" 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# 5. tell the boot scripts that cbridge/tv11 are supervised elsewhere
+# ---------------------------------------------------------------------------
+export PIDP10_MANAGED=1
+export PIDP10_CONSOLE_PORT PIDP10_PANEL PIDP10_GPIO_CHIP
+
+# The engine itself: from PATH on a packaged system, from the checkout when
+# PIDP10_HOME points at one. A developer runs this from a checkout, where the
+# engine they just built is in src/pdp10/BIN - prefer that over the prebuilt
+# copy committed under bin/, which is exactly how a fix appears not to work.
+pidp_path=$(command -v "$pidp_bin" || true)
+[ -x "$pidp_path" ] || pidp_path=${PIDP10_HOME:-}/src/pdp10/BIN/$pidp_bin
+[ -x "$pidp_path" ] || pidp_path=$(dirname "$PIDP10_PREFIX")/bin/$pidp_bin
+[ -x "$pidp_path" ] || pidp_path=$PIDP10_BIN/$pidp_bin
+[ -x "$pidp_path" ] || pidp_path=${PIDP10_HOME:-}/bin/$pidp_bin
+[ -x "$pidp_path" ] || die "$pidp_bin not found (build src/pdp10 with: make PIDP10=1)"
+
+echo "pidp10-engine: boot=$boot_number ($sys_oct) system=$sel engine=$pidp_bin script=$ext console=tcp/$PIDP10_CONSOLE_PORT data=$bootdir state=$statedir"
+
+# simh resolves every attach/eval relative to its cwd, and the boot scripts
+# expect to start at the state root. Not the bin dir, as upstream did: that is
+# how disk images ended up being written next to the executables.
+cd "$PIDP10_STATE" || die "cannot enter $PIDP10_STATE"
+exec "$pidp_path" "$bootfile"

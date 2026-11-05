@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# The noisy Teletype Model 33 (bin/sty) wired to the PDP-10 console, as a
+# service instead of a fire-and-forget nohup in pdp.sh.
+#
+#   systemctl --user start pidp10-teletype.service
+#   journalctl --user -u pidp10-teletype -f
+#
+# Silence: PIDP10_STY_SILENT=1 drops the sample playback (equivalent to using
+# `pdp telcon` upstream, but the same unit).
+
+[Unit]
+Description=PiDP-10 Teletype Model 33 on the PDP-10 console
+After=graphical-session.target pidp10.service
+PartOf=pidp10.target
+
+[Service]
+Type=exec
+EnvironmentFile=-/etc/pidp10/pidp10.conf
+Environment=DISPLAY=:0
+Environment=SDL_AUDIODRIVER=pulse
+Environment=TERM=xterm-256color
+# $HOME/.fonts must contain TELETYPE1945-1985.ttf (install-fedora.sh copies it).
+# WorkingDirectory takes no $VAR expansion, hence the literal path.
+WorkingDirectory=/var/lib/pidp10
+ExecStart=/usr/libexec/pidp10/pidp10-teletype
+
+[Install]
+WantedBy=pidp10.target

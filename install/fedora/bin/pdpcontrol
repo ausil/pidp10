@@ -1,0 +1,114 @@
+#!/bin/bash
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# pdpcontrol - control the PDP-10 engine (Fedora replacement for bin/pdpcontrol.sh)
+#
+# Upstream's version drove a detached screen(1) session: it typed Ctrl-E twice
+# into the simh prompt over a PTY (expect(1)), then `pkill -9`-ed whatever was
+# left. Here systemd owns the process, so control means systemctl, and the
+# polite simh "exit" goes through the console telnet port (pidp10-stop) so disk
+# buffers actually get flushed instead of being SIGKILL-ed away.
+#
+# usage: pdpcontrol [user|system] {start [boot]|stop|restart [boot]|status|
+#                                  stat|console|halt}
+#
+# `user` (the default) drives the per-user units, which is what needs DISPLAY
+# and PipeWire; `system` drives pidp10-engine@.service.
+
+set -uo pipefail
+
+# Operator settings first (the same file the units load through EnvironmentFile=),
+# then the layout defaults. The conf file is authoritative for policy - what to
+# boot, which panel driver, which console port - and the layout is not in it, so
+# a PIDP10_STATE set on the command line still picks a scratch tree.
+[ -r /etc/pidp10/pidp10.conf ] && . /etc/pidp10/pidp10.conf
+: "${PIDP10_PREFIX:=/usr/share/pidp10}"
+: "${PIDP10_LIBEXEC:=/usr/libexec/pidp10}"
+: "${PIDP10_STATE:=/var/lib/pidp10}"
+: "${PIDP10_SELECTIONS:=$PIDP10_SYSTEMS/selections}"
+: "${PIDP10_CONSOLE_PORT:=1025}"
+
+
+scope=user
+case "${1:-}" in
+	user|system) scope=$1; shift ;;
+esac
+ctl=(systemctl)
+[ "$scope" = user ] && ctl=(systemctl --user)
+
+usage() {
+	echo "usage: pdpcontrol [user|system] {start [boot]|stop|restart [boot]|status|stat|console|halt}" >&2
+	exit 2
+}
+
+# Boot number -> unit name. The instance is the octal boot number because that
+# is what the cabinet's switch register shows; decimal from the command line is
+# accepted and converted.
+conf_boot() {
+	local b=${1:-1}
+	[[ $b =~ ^[0-9]+$ ]] || { echo "pdpcontrol: bad boot number '$b'" >&2; exit 2; }
+	[[ $b =~ ^0[0-7]+$ ]] && b=$((8#$b))
+	printf '%04o' "$b"
+}
+
+# The plain (untemplated) unit is the "boot 1" cabinet most people run, and it
+# is the one that is preset-enabled; keep using it when no boot was requested.
+unit_for() {
+	if [ -z "${1:-}" ]; then
+		[ "$scope" = user ] && echo pidp10.service || echo pidp10-engine@0001.service
+	else
+		local oct=$(conf_boot "$1")
+		[ "$scope" = user ] && echo "pidp10@${oct}.service" \
+		                    || echo "pidp10-engine@${oct}.service"
+	fi
+}
+
+system_of() {
+	local oct=$1
+	awk -v n="$oct" '$1 == n { print $2; found=1; exit }
+	                END { if (!found) print "hills-blinky" }' < "$PIDP10_SELECTIONS" 2>/dev/null
+}
+
+verb=${1:-}
+[ -n "$verb" ] || usage
+shift
+
+case "$verb" in
+  start|restart)
+	boot=${1:-}
+	unit=$(unit_for "$boot")
+	sel=$(system_of "$(conf_boot "${boot:-1}")")
+	echo "pdpcontrol: $scope/$unit ($sel)"
+	"${ctl[@]}" "$verb" "$unit" || "${ctl[@]}" status "$unit"
+	;;
+  stop|halt)
+	unit=$(unit_for "${1:-}")
+	echo "pdpcontrol: $scope/$unit"
+	# ExecStop= runs pidp10-stop, which says "exit" to the simh console so
+	# simh flushes its disk buffers. This is a POWER switch, not an OS
+	# shutdown: bring ITS down from the console first.
+	"${ctl[@]}" stop "$unit"
+	;;
+  status)
+	if [ -n "${1:-}" ]; then
+		"${ctl[@]}" status "$(unit_for "$1")"
+	else
+		"${ctl[@]}" --no-pager --plain list-units 'pidp10*' || true
+	fi
+	;;
+  stat)
+	printf 'PiDP-10  scope=%s  console=tcp/%s\n' "$scope" "$PIDP10_CONSOLE_PORT"
+	printf '  data   %s\n  state  %s\n' "$PIDP10_PREFIX" "$PIDP10_STATE"
+	"${ctl[@]}" --no-pager --plain list-units 'pidp10*' --no-legend || true
+	;;
+  console)
+	exec "$PIDP10_LIBEXEC/pidp10-terminal" telnet localhost "$PIDP10_CONSOLE_PORT"
+	;;
+  -h|--help|help)
+	usage
+	;;
+  *)
+	echo "pdpcontrol: unknown verb '$verb'" >&2
+	usage
+	;;
+esac

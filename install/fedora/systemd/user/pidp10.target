@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Session bundle for the PiDP-10 kiosk: engine + Knight-TV display server +
+# the operator terminals. Everything in here runs as the logged-in user in
+# graphical-session.target, because all of it needs DISPLAY.
+#
+#   systemctl --user enable --now pidp10.target
+#   systemctl --user stop       pidp10.target      # "power off"
+#
+# Which system boots is PIDP10_BOOT in /etc/pidp10/pidp10.conf; the target
+# pulls in pidp10.service, which reads it. For a one-off boot of something
+# else:  systemctl --user start pidp10@2.service   (TOPS-10)
+#
+# Boot the whole farm at login without touching ~/.profile (the old
+# autostart.sh + "xrandr to wake Xwayland" hack):
+#   systemctl --user enable pidp10.target
+# graphical-session.target only exists once the session is up, so ordering is
+# handled by systemd instead of by sleeping and praying.
+
+[Unit]
+Description=PiDP-10 (PDP-10 + AI Lab hardware farm)
+Documentation=https://obsolescence.dev/pdp10
+After=graphical-session.target
+Wants=graphical-session.target pidp10.service
+
+[Install]
+WantedBy=graphical-session.target
