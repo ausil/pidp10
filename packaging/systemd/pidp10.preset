@@ -1,0 +1,23 @@
+# System-manager preset for PiDP-10 units.
+#
+# Distro policy says package installs must not silently start services, so
+# this file - not a `systemctl enable` in a post scriptlet - decides the
+# default, and an admin edits it (or runs `systemctl preset <unit>`) to change
+# its mind. `systemctl preset-all` re-applies it.
+#
+# Note the instance number: `enable pidp10-engine@.service` in a preset is a
+# no-op, because a template has nothing to create a symlink for. You enable a
+# concrete boot number.
+#
+# The PiDP-10 product build (`rpmbuild --with kiosk_default`) flips the two
+# `disable` lines below to `enable`; a plain `dnf install pidp10` leaves the
+# box idle until you start something by hand (`pdpcontrol start`).
+
+# Chaosnet bridge: ITS wants it, and it is harmless enough to always have.
+enable  pidp10-cbridge.service
+
+# The cabinet itself, boot 1 (hills-blinky). Not enabled by default: it binds
+# the console port and asks for RT priority, which is a decision, not a
+# default. Starting it once is enough for most uses:
+#     pdpcontrol start            # or: systemctl start pidp10-engine@0001
+disable pidp10-engine@0001.service
