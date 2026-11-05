@@ -20,3 +20,33 @@ target_compile_options(pinctrl PRIVATE -fno-lto)
 target_link_options(pinctrl PRIVATE -fno-lto)
 install(TARGETS pinctrl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES pinctrl-completion.bash RENAME pinctrl DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/bash-completion/completions")
+
+# ---------------------------------------------------------------------------
+# pidp-gpio-probe - is there a front panel on this machine?
+#
+# Used by the systemd engine unit (install/fedora/libexec/pidp10-engine) so
+# that "do we have blinkenlights" is answered by the same code that would have
+# to drive them, instead of by a `gpioinfo | grep gpio` that is true on every
+# machine which has GPIO at all.
+#
+# It only needs the gpiod backend plus the shared selector; the register
+# mapping backend is deliberately left out (probing it would mean mapping
+# device memory just to ask a question).
+# ---------------------------------------------------------------------------
+find_package(PkgConfig)
+if(PkgConfig_FOUND)
+    pkg_check_modules(LIBGPIOD libgpiod>=2.0)
+endif()
+
+if(LIBGPIOD_FOUND)
+    add_executable(pidp-gpio-probe
+        pidp_gpio_probe.c pidp_panel.c pidp_panel_sim.c pidp_panel_gpiod.c)
+    target_compile_definitions(pidp-gpio-probe PRIVATE
+        PIDP10_HAVE_GPIOD=1 PIDP10_HAVE_GPIOMEM=0)
+    target_include_directories(pidp-gpio-probe PRIVATE ${LIBGPIOD_INCLUDE_DIRS})
+    target_link_libraries(pidp-gpio-probe ${LIBGPIOD_LIBRARIES})
+    install(TARGETS pidp-gpio-probe RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+else()
+    message(STATUS "libgpiod >= 2.0 not found: building pinctrl only "
+                   "(no pidp-gpio-probe, front panel will fall back to sim)")
+endif()
