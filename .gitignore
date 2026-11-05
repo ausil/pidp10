@@ -20,4 +20,18 @@ src/utils/pinctrl/pinctrl
 src/utils/pinctrl/pidp-gpio-probe
 src/utils/pinctrl/scansw10
 src/utils/pinctrl/pidp10-test
+# same story in the vendored bin/ directory: these are what `make` produces, and
+# bin/pidp10 was a byte-identical copy of bin/pdp10-ka kept under the name
+# bin/pdpcontrol.sh:21 hardcodes. bin/pidp10.panama stays tracked for now: its
+# source is unrecorded. It is not in rcornwell/pidp10 either - that is a fork of
+# this repository and carries the same binary - so install.sh's
+# "rm -r .../src/panama5" has never had anything to delete.
+/bin/pdp10-*
+/bin/pdp6
+/bin/pidp10
+/bin/pidp10-test
+/bin/scansw10
+/bin/st
+/bin/sty
+/bin/binaries-for-*.tar.gz
 build/

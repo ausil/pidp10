@@ -54,8 +54,22 @@ PINCTRLD := src/utils/pinctrl
 # probe the engine unit asks, and the two cabinet tools.
 PANEL_BINS     := pinctrl pidp-gpio-probe scansw10 pidp10-test
 ENGINES        := pdp10-ka pdp10-ki pdp10-kl pdp10-ks pdp6
+# Prebuilt device sims: ELF with no source in this tree. Most of these do have
+# an upstream (vt05 vt50 vt52 dp3300 dm2500 gecon <- aap/vt05, tek4010 <-
+# rricharz/Tek4010, tv11 tvcon <- aap/pdp11, cbridge <- bictorv/chaosnet-bridge,
+# supdup <- PDP-10/supdup, gw mlftp shutdown gateway.sh <-
+# Chaosnet/chaosnet-tools, mkpty33 <- aap/pdp6 tools/mkpty33.c) and should be
+# built from there rather than installed from here; that is a separate spec per
+# program, not a job for this makefile.  `pidp10` is not listed: it was a copy
+# of the engine under another name.  `pidp10.panama` is listed because its
+# source is nowhere to be found: not in this tree, and not in rcornwell/pidp10
+# either, which is a fork of *this* repository and so carries the same committed
+# binary rather than the sources - install.sh's "rm -r .../src/panama5" has
+# never matched a file. Its strings (SDL, pcre, zlib, DHCP, "CR: card empty")
+# put it in the PanamaX family, so it is an engine built with that peripheral
+# set compiled in; until someone produces the source it is an orphan blob.
 VENDORED     := cbridge dm2500 dp3300 gecon gw imlac mkpty33 mlftp shutdown \
-                supdup tek4010 tv11 tvcon vt05 vt50 vt52 pidp10 pidp10.panama
+                supdup tek4010 tv11 tvcon vt05 vt50 vt52 pidp10.panama
 
 # Rewrite the install locations baked into the units, the helpers and the
 # front-ends. They are written with /usr paths so the tree is readable and
