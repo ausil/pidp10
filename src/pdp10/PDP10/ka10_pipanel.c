@@ -33,12 +33,39 @@
  *
  * To Build this:
  *    make PIDP10=1 pdp10-ka
+ *
+ * All panel access goes through pinctrl/pidp_panel.h, which picks a backend
+ * at run time (gpiod / gpiomem / sim). Do not call gpiolib_* or gpiod_* from
+ * here: that is what made this file unusable on any kernel that does not hand
+ * out /dev/gpiomem.
  */
 #include <pthread.h>                            /* Needed for pthread */
 #include <unistd.h>                             /* Needed for sleep/geteuid */
 #include <sys/types.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* Console line editing for vm_read(). Upstream assumed libedit because that is
+ * what Raspberry Pi OS ships; GNU readline offers the same rl_callback_* API
+ * and is the one that is actually installed on Fedora, so accept either. With
+ * neither, vm_read() falls back to plain line input (see plain_read_char).
+ */
+#if defined(HAVE_EDITLINE)
 #include <editline/readline.h>
-#include "pinctrl/gpiolib.h"
+#define PANEL_LINE_EDITING      "libedit"
+#define PANEL_USE_CALLBACK_EDIT 1
+#elif defined(HAVE_READLINE)
+#include <readline/readline.h>
+#include <readline/history.h>
+#define PANEL_LINE_EDITING      "GNU readline"
+#define PANEL_USE_CALLBACK_EDIT 1
+#else
+#define PANEL_LINE_EDITING      "plain line input"
+#define PANEL_USE_CALLBACK_EDIT 0
+#endif
+
+#include "pinctrl/pidp_panel.h"
 #include "kx10_defs.h"
 
 extern uint64 SW;         /* Switch register */
@@ -166,6 +193,31 @@ int    cols[18] = { 21,20,16,12,7,8,25,24,23,18,10,9,11,5,6,13,19,26 };
 
 long intervl = 50000;
 
+/* Panel wiring, handed to pidp_panel_open() by the mux thread. The numbers
+ * are the legacy BCM GPIOs the ribbon is wired to; the backend translates
+ * them (line offsets on gpiod, controller registers on gpiomem).
+ *
+ * PIDP10_GPIO_CHIP is passed straight through: the gpiod backend reads it as a
+ * gpiochip name or /dev path, the gpiomem one as a pinctrl compatible/name.
+ * An unset/empty value means "work it out", which is what lets one binary
+ * serve a cabinet and a machine with no panel at all.
+ */
+static pidp_panel_config
+panel_request(void)
+{
+    pidp_panel_config c = { NULL, NULL, NULL, 0, 0, 0, NULL, 0 };
+    const char *chip = getenv("PIDP10_GPIO_CHIP");
+
+    c.rows     = xrows;
+    c.cols     = cols;
+    c.latch    = xIO;
+    c.hold_ns  = intervl;              /* row stays lit                */
+    c.gap_ns   = intervl / 10;         /* dead time before the next row */
+    c.chip     = (chip && *chip) ? chip : NULL;
+    c.backend  = NULL;                 /* env PIDP10_PANEL decides      */
+    return c;
+}
+
 struct {
       int   last_state;      /* last state */
       int   state;           /* Stable state */
@@ -217,35 +269,20 @@ static void debounce_sw(int state, int sw)
 static t_addr
 read_sw()
 {
-    int        col, row, i;
+    int        col, row;
     t_uint64   sw;
     t_addr     new_as;
-    struct timespec spec;
 
-    gpio_set_drive(xIO, DRIVE_HIGH);
-    for (i = 0; i < 18; i++) {
-        gpio_set_dir(cols[i], DIR_INPUT);
-    }
+    /* Columns become inputs with a pull-up; the matrix is read row by row
+     * below. On libgpiod this is the expensive part (a direction
+     * reconfiguration), hence the caller rate-limits it. */
+    pidp_panel_inputs(1);
 
-    spec.tv_sec = 0;
     new_as = 0;
     for (row=0; row<5; row++) { 
-        /* Select row address */
-        for (i = 0; i < 3; i++) {
-             if ((row & (1 << i)) == 0) {
-                 gpio_set_drive(xrows[i], DRIVE_LOW);
-             } else {
-                 gpio_set_drive(xrows[i], DRIVE_HIGH);
-             }
-        }
-        spec.tv_nsec = intervl/10;
-        nanosleep(&spec, NULL);
-        sw = 0;
-        for (i = 0; i < 18; i++) {
-             if (gpio_get_level(cols[i])) {
-                 sw |= 1 << i;
-             }
-        }
+        /* Select row address, settle, sample the 18 column lines.
+         * Bit i set == column i high == that switch NOT pressed. */
+        sw = pidp_panel_row_read(row);
         /* Map row to values */
         switch (row) {
         default:
@@ -293,74 +330,41 @@ read_sw()
 void *blink(void *ptr)
 {
     int        *terminate = (int *)ptr;
-    int        col, row, i;
-    int        num_gpios, ret;
+    int        col, row, ret;
     uint32     leds;
     t_addr     new_as;
-    struct timespec spec;
     struct sched_param sp;
 
-    spec.tv_sec = 0;
     sp.sched_priority = 98; // maybe 99, 32, 31?
     if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp))
         fprintf(stderr, "warning: failed to set RT priority\n");
 
-    ret = gpiolib_init();
-    if (ret < 0) {
-        sim_messagef(SCPE_IERR, "Unable to initialize gpiolib- %d\n", ret);
-        return (void *)-1;
-    }
+    /* One call replaces the old gpiolib_init()/gpiolib_mmap()/fsel dance and
+     * cannot abort the simulator: with no panel hardware the selector hands us
+     * the simulator backend and the engine runs headless. */
+    pidp_panel_config req = panel_request();
 
-    num_gpios = ret;
-
-    if (num_gpios == 0) {
-        sim_messagef(SCPE_IERR, "No GPIO chips found\n");
-        return (void *)-1;
-    }
-
-    ret = gpiolib_mmap();
+    ret = pidp_panel_open(&req);
     if (ret) {
-        if (ret == EACCES && geteuid()) {
-            sim_messagef(SCPE_IERR, "Must be root\n");
-    } else {
-            sim_perror("Failed to mmap gpiolib");
-    }
-    return (void *)-1;
-    }
-
-    /* Initialize GPIO pins */
-    gpio_set_fsel(xIO, GPIO_FSEL_OUTPUT);
-    gpio_set_dir(xIO, DIR_OUTPUT);
-    gpio_set_drive(xIO, DRIVE_HIGH);
-
-    /* Row address pins */
-    for (row = 0; row < 3; row++) {
-         gpio_set_fsel(xrows[row], GPIO_FSEL_OUTPUT);
-         gpio_set_dir(xrows[row], DIR_OUTPUT);
-         gpio_set_drive(xrows[row], DRIVE_HIGH);
-    }
-
-    /* Columns */
-    for (col = 0; col < 18; col++) {
-         gpio_set_fsel(cols[col], GPIO_FSEL_INPUT);
-         gpio_set_pull(cols[col], PULL_UP);
+        sim_messagef(SCPE_IERR, "Front panel unavailable (%s), running "
+                     "without blinkenlights\n", strerror(-ret));
+        return (void *)-1;
     }
 
     /* Read initial value of switches */
     new_as = read_sw();
-    sim_messagef(SCPE_OK, "PiDP-10 FP on\n");
+    sim_messagef(SCPE_OK, "PiDP-10 FP on (%s), console line editing: %s\n",
+                 pidp_panel_name(), PANEL_LINE_EDITING);
 
 
     /* start the actual multiplexing */
 
     while (*terminate == 0)
     {
-        /* Set to point to switchs while updating digits */
-        gpio_set_drive(xIO, DRIVE_HIGH);
-        /* Set direction of columns to output */
-        for (i = 0; i < 18; i++) {
-            gpio_set_dir(cols[i], DIR_OUTPUT);
-        }
+        /* Columns drive the LEDs for the whole frame; the latch stays
+         * released while the data changes. Cheap no-op if the columns are
+         * already outputs. */
+        pidp_panel_inputs(0);
 
         /* Display each row */
         for (row=0; row<7; row++) { /* 7 rows of LEDS get lit */
@@ -411,36 +415,21 @@ void *blink(void *ptr)
                     break;
             }
 
-            /* Select correct row to display */
-            for (i = 0; i < 3; i++) {
-                if ((row & (1 << i)) == 0) {
-                    gpio_set_drive(xrows[i], DRIVE_LOW);
-                } else {
-                    gpio_set_drive(xrows[i], DRIVE_HIGH);
-                }
-            }
-
-            /* Update the leds for output */
-            for (i = 0; i < 18; i++) {
-                if ((leds & (1 << i)) == 0) {
-                    gpio_set_drive(cols[i], DRIVE_HIGH);
-                } else {
-                    gpio_set_drive(cols[i], DRIVE_LOW);
-                }
-            }
-
-            /* Select output */
-            gpio_set_drive(xIO, DRIVE_LOW);
-            spec.tv_nsec = intervl;
-            nanosleep(&spec, NULL);
-            /* Deselect output */
-            gpio_set_drive(xIO, DRIVE_HIGH);
-            spec.tv_nsec = intervl/10;
-            nanosleep(&spec, NULL);
+            /* Row select, column data, latch strobe, hold and blanking.
+             * One call, because the backends batch what they can: the old
+             * code cost ~30 register writes per row here and a libgpiod
+             * version must cost a couple of ioctls instead. */
+            pidp_panel_row_write(row, leds);
        }
 
-       /* Read in switches */
-       new_as = read_sw();
+       /* Read in switches.
+        *
+        * The button scan needs the columns reconfigured as inputs, which on
+        * the character device is far more expensive than lighting the LEDs.
+        * pidp_panel_scan_due() is always true unless PIDP10_SWITCH_HZ asks
+        * for a cap, so this is upstream behaviour by default. */
+       if (pidp_panel_scan_due())
+           new_as = read_sw();
 
        /* If running, check for switch changes */
        if (par_stop) {
@@ -545,16 +534,12 @@ void *blink(void *ptr)
         */
     }
 
-    /* received terminate signal, close down */
-    gpio_set_drive(xIO, DRIVE_HIGH);
-    for (i = 0; i < 18; i++) {
-        gpio_set_dir(cols[i], DIR_INPUT);
-    }
+    /* received terminate signal, close down: latch released, columns
+     * tri-stated, rows deselected - the state that leaves the LEDs dark and
+     * the line drivers unstressed. */
+    pidp_panel_park();
 
-    for (row = 0; row < 3; row++) {
-        gpio_set_drive(xrows[row], DRIVE_HIGH);
-    }
-
+    return NULL;
 }
 
 volatile int    input_wait;
@@ -569,9 +554,56 @@ read_line_handler(char *line)
     if (line != NULL) {
        input_buffer = line;
        input_wait = 0;
+#if PANEL_USE_CALLBACK_EDIT
        add_history(line);
+#endif
     }
 }
+
+#if !PANEL_USE_CALLBACK_EDIT
+/*
+ * Stand-in for rl_callback_read_char() on a machine that has neither libedit
+ * nor GNU readline: echo what arrives and hand the completed line to the same
+ * handler. It gives line-at-a-time SCP input at the console and nothing else
+ * (no editing, no history), which is enough to keep the panel build usable.
+ */
+static char   plain_buf[256];
+static size_t plain_len;
+
+static void
+plain_read_char(int fd)
+{
+    char c;
+
+    while (read(fd, &c, 1) == 1) {
+        if ((c == '\r') || (c == '\n')) {
+            char *line = (char *) malloc(plain_len + 1);
+
+            if (line == NULL)
+                return;
+            memcpy(line, plain_buf, plain_len);
+            line[plain_len] = '\0';
+            plain_len = 0;
+            printf("\r\n");
+            fflush(stdout);
+            read_line_handler(line);        /* takes ownership of line */
+            return;
+        }
+        if ((c == '\b') || (c == 0177)) {
+            if (plain_len > 0) {
+                plain_len--;
+                printf("\b \b");
+            }
+            continue;
+        }
+        if (plain_len < sizeof (plain_buf) - 1) {
+            plain_buf[plain_len++] = c;
+            (void) fputc(c, stdout);
+            fflush(stdout);
+        }
+    }
+}
+#endif /* !PANEL_USE_CALLBACK_EDIT */
 
 /*
  * Process input from stdin or switches.
@@ -586,7 +618,9 @@ vm_read(char *cptr, int32 sz, FILE *file)
 
     if (input_buffer != NULL)
         free(input_buffer);
+#if PANEL_USE_CALLBACK_EDIT
     rl_callback_handler_install(sim_prompt, (rl_vcpfunc_t*) &read_line_handler);
+#endif
     input_wait = 1;
     input_buffer = NULL;
     while (input_wait) {
@@ -596,7 +630,11 @@ vm_read(char *cptr, int32 sz, FILE *file)
        tv.tv_usec = 10000;
        (void)select(fd+1, &read_set, NULL, NULL, &tv);
        if (FD_ISSET(fd, &read_set)) {
+#if PANEL_USE_CALLBACK_EDIT
            rl_callback_read_char();
+#else
+           plain_read_char(fd);
+#endif
        } else {
            if (pwr_off) {
                if ((input_buffer = (char *)malloc(20)) != 0) {
@@ -722,7 +760,9 @@ vm_read(char *cptr, int32 sz, FILE *file)
             }
        }
     }
+#if PANEL_USE_CALLBACK_EDIT
     rl_callback_handler_remove();
+#endif
     return input_buffer;
 }
 
@@ -736,8 +776,6 @@ vm_post(t_bool from_scp)
  */
 t_stat pi_panel_start(void)
 {
-    int       terminate = 1;
-    int       i,j;
     t_stat    r;
 
     /* start up multiplexing thread */
@@ -757,6 +795,9 @@ void pi_panel_stop(void)
         sim_vm_read = NULL;
 
         sleep (2);      /* allow threads to close down */
+        /* Done only after the mux thread has stopped touching the lines,
+         * otherwise it would light rows again behind our back. */
+        pidp_panel_close();
     }
 }
 
