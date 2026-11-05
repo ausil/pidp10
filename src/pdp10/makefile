@@ -1418,7 +1418,12 @@ CC := ${GCC} ${CC_STD} -U__STRICT_ANSI__ ${CFLAGS_G} ${CFLAGS_O} ${CFLAGS_GIT} $
 ifneq (,${SIM_VERSION_MODE})
   CC += -DSIM_VERSION_MODE="${SIM_VERSION_MODE}"
 endif
-LDFLAGS := ${OS_LDFLAGS} ${NETWORK_LDFLAGS} ${LDFLAGS_O}
+# 'override +=' rather than ':=' so that a caller which puts LDFLAGS on the make
+# command line (rpmbuild, our top-level Makefile forwarding the environment, or
+# anyone packaging this) adds its linker flags to ours instead of replacing
+# them: losing -lm -lpng -lz is not a way to build a simulator. EXTRA_LDFLAGS is
+# the explicit hook, named so it cannot collide with anything the caller sets.
+override LDFLAGS += ${OS_LDFLAGS} ${NETWORK_LDFLAGS} ${LDFLAGS_O} ${EXTRA_LDFLAGS}
 
 
 #
@@ -1435,8 +1440,66 @@ SIM = ${SIMHD}/scp.c ${SIMHD}/sim_console.c ${SIMHD}/sim_fio.c \
 DISPLAYD = ${SIMHD}/display
 
 PANELD = ../utils/pinctrl
-PIDPPANEL = ${PANELD}/gpiochip_bcm2712.c ${PANELD}/gpiochip_bcm2835.c \
-           ${PANELD}/gpiochip_rp1.c ${PANELD}/gpiolib.c ${PANELD}/util.c
+#
+# Front panel support (make PIDP10=1). ka10_pipanel.c talks to the panel only
+# through pidp_panel.h; the backends that get compiled depend on what this
+# machine actually offers, so the same source builds for a PiDP-10 cabinet and
+# for a machine with no panel at all:
+#
+#   sim      always built - no hardware, blinkenlights go to the log
+#   gpiod    when libgpiod is present: the kernel GPIO character device. The
+#            only backend that works on a distribution kernel (Fedora ships no
+#            gpiomem driver and CONFIG_STRICT_DEVMEM blocks the /dev/mem
+#            fallback), and the one needed for a Pi 5, whose panel lines live
+#            on the RP1 I/O chip rather than in the SoC register space.
+#   gpiomem  always built on Linux: the legacy pinctrl register mapping.
+#            Requires /dev/gpiomem (Raspberry Pi OS) and is simply unable to
+#            open anywhere else, which auto-detection turns into "sim".
+#
+PIDPPANEL = ${PANELD}/pidp_panel.c ${PANELD}/pidp_panel_sim.c \
+            ${PANELD}/pidp_panel_gpiomem.c \
+            ${PANELD}/gpiochip_bcm2712.c ${PANELD}/gpiochip_bcm2835.c \
+            ${PANELD}/gpiochip_rp1.c ${PANELD}/gpiolib.c ${PANELD}/util.c
+PIDP10_CCDEFS = -DPIDP10_HAVE_GPIOMEM=1
+PIDP10_LDFLAGS =
+ifneq (${PIDP10},)
+  ifneq (,$(call find_include,gpiod))
+    ifneq (,$(call find_lib,gpiod))
+      PIDPPANEL += ${PANELD}/pidp_panel_gpiod.c
+      PIDP10_CCDEFS += -DPIDP10_HAVE_GPIOD=1
+      PIDP10_LDFLAGS += -lgpiod
+      $(info using libgpiod: $(call find_lib,gpiod) for the front panel)
+    else
+      $(info libgpiod headers found but no library: front panel will be sim only)
+    endif
+  else
+    $(info no libgpiod (gpiod.h): front panel will be sim/gpiomem only)
+  endif
+  ifeq (Linux,${OSTYPE})
+    PIDP10_LDFLAGS += -lpthread
+  endif
+  #
+  # vm_read() uses the rl_callback_* line-editing API, which libedit and GNU
+  # readline both provide. Upstream assumed libedit because Raspberry Pi OS
+  # ships it; on Fedora it is normally the other way round, which made the
+  # panel build fail on #include <editline/readline.h>. Take whichever is
+  # there, and if neither is, ka10_pipanel.c falls back to plain line input.
+  #
+  ifneq (,$(findstring -DHAVE_EDITLINE,${OS_CCDEFS}))
+    $(info front panel console line editing: libedit)
+  else
+    ifneq (,$(call find_include,readline/readline))
+      ifneq (,$(call find_lib,readline))
+        PIDP10_CCDEFS += -DHAVE_READLINE
+        PIDP10_LDFLAGS += -lreadline
+        $(info front panel console line editing: GNU readline $(call find_lib,readline))
+      endif
+    endif
+    ifeq (,$(findstring -DHAVE_READLINE,${PIDP10_CCDEFS}))
+      $(info no libedit and no GNU readline: front panel console will use plain line input)
+    endif
+  endif
+endif
 
 PDP6D = ${SIMHD}/PDP10
 ifneq (,${DISPLAY_OPT})
@@ -1456,8 +1519,9 @@ PDP6 += ${PDP6D}/kx10_lights.c
 PDP6_LDFLAGS += -lusb-1.0
 endif
 ifneq (${PIDP10},)
-PDP6_OPT += -DPIDP10=1 -I../utils
+PDP6_OPT += -DPIDP10=1 -I../utils $(PIDP10_CCDEFS)
 PDP6 += ${PDP6D}/ka10_pipanel.c ${PIDPPANEL}
+PDP6_LDFLAGS += $(PIDP10_LDFLAGS)
 endif
 
 PDP10D = ${SIMHD}/PDP10
@@ -1489,8 +1553,9 @@ KA10 += ${KA10D}/kx10_lights.c
 KA10_LDFLAGS += -lusb-1.0
 endif
 ifneq (${PIDP10},)
-KA10_OPT += -DPIDP10=1 -I../utils
+KA10_OPT += -DPIDP10=1 -I../utils $(PIDP10_CCDEFS)
 KA10 += ${KA10D}/ka10_pipanel.c ${PIDPPANEL}
+KA10_LDFLAGS += $(PIDP10_LDFLAGS)
 endif
 
 KI10D = ${SIMHD}/PDP10
@@ -1513,8 +1578,9 @@ KI10 += ${KA10D}/kx10_lights.c
 KI10_LDFLAGS = -lusb-1.0
 endif
 ifneq (${PIDP10},)
-KI10_OPT += -DPIDP10=1 -I../utils
+KI10_OPT += -DPIDP10=1 -I../utils $(PIDP10_CCDEFS)
 KI10 += ${KA10D}/ka10_pipanel.c ${PIDPPANEL}
+KI10_LDFLAGS += $(PIDP10_LDFLAGS)
 endif
 
 KL10D = ${SIMHD}/PDP10
@@ -1528,8 +1594,9 @@ KL10 = ${KL10D}/kx10_cpu.c ${KL10D}/kx10_sys.c ${KL10D}/kx10_df.c \
     ${KL10D}/kl10_dn.c
 KL10_OPT = -DKL=1 -DUSE_INT64 -I $(KL10D) -DUSE_SIM_CARD ${NETWORK_OPT} 
 ifneq (${PIDP10},)
-KL10_OPT += -DPIDP10=1 -I../utils
+KL10_OPT += -DPIDP10=1 -I../utils $(PIDP10_CCDEFS)
 KL10 += ${KA10D}/ka10_pipanel.c ${PIDPPANEL}
+KL10_LDFLAGS += $(PIDP10_LDFLAGS)
 endif
 
 KS10D = ${SIMHD}/PDP10
@@ -1540,8 +1607,9 @@ KS10 = ${KS10D}/kx10_cpu.c ${KS10D}/kx10_sys.c ${KS10D}/kx10_disk.c \
     ${KS10D}/ks10_kmc.c ${KS10D}/ks10_dup.c ${KS10D}/kx10_imp.c
 KS10_OPT = -DKS=1 -DUSE_INT64 -I $(KS10D) ${NETWORK_OPT} 
 ifneq (${PIDP10},)
-KS10_OPT += -DPIDP10=1 -I../utils
+KS10_OPT += -DPIDP10=1 -I../utils $(PIDP10_CCDEFS)
 KS10 += ${KA10D}/ka10_pipanel.c ${PIDPPANEL}
+KS10_LDFLAGS += $(PIDP10_LDFLAGS)
 endif
 
 
@@ -1592,7 +1660,7 @@ pdp10-kl : ${BIN}pdp10-kl${EXE}
 
 ${BIN}pdp10-kl${EXE} : ${KL10} ${SIM}
 	${MKDIRBIN}
-	${CC} ${KL10} ${SIM} ${KL10_OPT} ${CC_OUTSPEC} ${LDFLAGS}
+	${CC} ${KL10} ${SIM} ${KL10_OPT} ${CC_OUTSPEC} ${LDFLAGS} ${KL10_LDFLAGS}
 ifneq (,$(call find_test,${PDP10D},kl10))
 	$@ $(call find_test,${PDP10D},kl10) ${TEST_ARG}
 endif
@@ -1601,7 +1669,7 @@ pdp10-ks : ${BIN}pdp10-ks${EXE}
 
 ${BIN}pdp10-ks${EXE} : ${KS10} ${SIM}
 	${MKDIRBIN}
-	${CC} ${KS10} ${SIM} ${KS10_OPT} ${CC_OUTSPEC} ${LDFLAGS}
+	${CC} ${KS10} ${SIM} ${KS10_OPT} ${CC_OUTSPEC} ${LDFLAGS} ${KS10_LDFLAGS}
 ifneq (,$(call find_test,${PDP10D},ks10))
 	$@ $(call find_test,${PDP10D},ks10) ${TEST_ARG}
 endif
