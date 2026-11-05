@@ -65,6 +65,13 @@ The consequences worth knowing:
   `./build`, and the committed ELFs that used to sit next to the sources are
   gone from git (an installer that falls back to whatever is lying in `src/`
   ships a stale one silently).
+* The same applies to `bin/`. What remains tracked there is the set with no
+  source in this tree, plus `pidp10.panama`. The committed engines
+  (`pdp10-{ka,ki,kl,ks}`, `pdp6`), the `pdp10-*.2024` snapshots, `st`, `sty`,
+  `scansw10`, `pidp10-test`, `binaries-for-X86-64.tar.gz` and `pidp10` are
+  untracked - `pidp10` was a byte-identical copy of `pdp10-ka` under the name
+  `bin/pdpcontrol.sh` hardcodes, and `rcornwell/pidp10` was merged into
+  `src/pdp10` at `02cb09a`, so there is one engine, not two.
 * `PIDP10_HOME=<checkout>` remains a developer shortcut: it is used as a last
   resort when looking for the engines and the vendored sims, so
   `PIDP10_HOME=$PWD install/fedora/libexec/pidp10-engine 1` works with nothing
@@ -104,7 +111,20 @@ Two switches:
 * `--with vendored` installs `bin/`'s prebuilt ELFs into `pidp10-vendored`
   (`cbridge`, `tv11`, `tvcon`, `imlac`, `vt05/50/52`, ...). Off by default, so a
   build that forbids binary blobs still produces a working simulator (you lose
-  cbridge/tv11/the exotic terminals).
+  cbridge/tv11/the exotic terminals), and **also off on any architecture but
+  aarch64**: what upstream publishes there is aarch64 ELF, so `rpmbuild
+  --with vendored` on x86-64 says so in `%build` and packages nothing rather
+  than installing binaries that cannot execute. `Source2` is declared only when
+  it will be used, so an SRPM built without vendored carries no blob at all.
+
+  Most of that set does have an upstream and should be built from it instead -
+  `aap/vt05` (vt05 vt50 vt52 dp3300 dm2500 gecon, MIT), `aap/pdp11` (tv11
+  tvcon), `rricharz/Tek4010` (GPL-3.0), `bictorv/chaosnet-bridge` (Apache-2.0),
+  `PDP-10/supdup`, `Chaosnet/chaosnet-tools` (gw mlftp shutdown gateway.sh),
+  `aap/pdp6` (mkpty33) and `jdersch/sImlac` (imlac). Each belongs in its own
+  repo and spec, because they are DEC/Datapoint/IMLAC emulators that other PDP
+  projects use too; `install.sh` already fetches most of them as `PDP-10/its`
+  submodules.
 * `--with kiosk_default` flips the systemd presets to enable the cabinet
   service at install, for a machine whose only purpose is blinkenlights.
   Off by default: a package that starts a PDP-10 on someone's laptop unasked
@@ -130,6 +150,29 @@ instead of setuid/setcap; RT priority comes from
 
 Boot numbers are the octal switch-register values (`0200` = TOPS-20), and
 `systems/selections` maps them to a system directory.
+
+## COPR
+
+`.copr/Makefile` implements the `make srpm` step that COPR's "build from git"
+method runs, by delegating to `packaging/build-rpm.sh --srpm-only` - the
+snapshot `Release:` and the blob-free `Source0` are that script's business, and
+a second implementation here is how a COPR build ends up shipping something a
+local build cannot reproduce.
+
+```sh
+copr-cli create pdp10 --chroot fedora-45-aarch64 --chroot fedora-45-x86_64 \
+    --scm-type git --scm-metadata https://github.com/<you>/pidp10
+copr-cli build pdp10 --nowait                      # the clean build
+copr-cli build pdp10 --nowait --with vendored      # cabinet extras, aarch64 only
+dnf install -y dnf-plugins-core && dnf copr enable <you>/pdp10 && dnf install pidp10
+```
+
+Enable aarch64 *and* x86-64: the engines are architecture-neutral (everything
+is compiled, `%check` boots all five), and the x86-64 chroot is what keeps the
+vendored arch guard honest. Multi-spec projects (`:multi-spec: yes`) are the
+next step once the terminal packages have specs of their own - one project so
+`pidp10`'s `Recommends: vt05 tek4010 imlac` resolve in the repo the user just
+enabled, separate SRPMs so each keeps its own version and licence.
 
 ## Debian
 

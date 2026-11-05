@@ -57,6 +57,21 @@
 %global appname PiDP-10
 %global simh_version 4.1.0
 
+%bcond_with     vendored
+%bcond_with     kiosk_default
+
+# The prebuilt peripherals in bin/ are aarch64 ELF. An x86-64 build that
+# installed them would ship a package of binaries that cannot execute, which is
+# what --with vendored did here until anyone checked, so the arch decides what
+# can be packaged and --with vendored only opts in on top of that; the request
+# is reported in %build rather than silently dropped. Defined before the Source
+# declarations because Source2 is conditional on it: an SRPM built without
+# vendored then carries no blob at all, rather than shipping one it never uses.
+%global build_vendored %{with vendored}
+%ifnarch aarch64
+%global build_vendored 0
+%endif
+
 Name:           %{srcname}
 Version:        %{simh_version}
 Release:        1.%{gitdate}git%{gitrev}%{?dist}
@@ -71,9 +86,11 @@ License:        BSD-2-Clause AND MIT AND HPND
 URL:            https://obsolescence.dev/pdp10
 # packaging/build-rpm.sh makes both tarballs with `git archive` (committed state
 # plus uncommitted changes to tracked files). Source0 has no binary blobs in it;
-# the prebuilt peripherals are Source2, unpacked only for --with vendored.
+# the prebuilt peripherals are Source2, declared only when they will be used.
 Source0:        %{srcname}-%{version}.tar.gz
+%if %{build_vendored}
 Source2:        %{srcname}-vendored-%{version}.tar.gz
+%endif
 # Same content as install/fedora/sysusers.d/30-pidp10.conf, shipped separately
 # because %%sysusers_create_package has to read it in %%pre, before the files it
 # describes have been unpacked.
@@ -112,9 +129,6 @@ Recommends:     %{name}-panel%{?_isa} = %{version}-%{release}
 Suggests:       firewalld
 %{?systemd_requires}
 
-%bcond_with     vendored
-%bcond_with     kiosk_default
-
 %description
 A PDP-10 (KA10/KI10/KL10/KS10) simulator with the PiDP-10 front panel:
 blinkenlights and buttons driven over GPIO, plus the AI Lab peripherals
@@ -122,8 +136,15 @@ blinkenlights and buttons driven over GPIO, plus the AI Lab peripherals
 Digitronics 3300, Type-340 display) and Chaosnet.
 
 The engines, the panel driver and the GPIO tools in this package are built
-from source. The device simulators that upstream only publishes as binaries
-live in pidp10-vendored.
+from source.
+%if %{build_vendored}
+The device simulators that upstream only publishes as binaries live in
+pidp10-vendored.
+%else
+The prebuilt device simulators are not packaged here: what upstream publishes
+of them is aarch64 binaries, and installing those on this architecture would
+only put files on disk that cannot execute.
+%endif
 
 %package panel
 Summary:        Front-panel GPIO tools for the PiDP-10
@@ -149,7 +170,7 @@ Recommends:     lxterminal
 Icons, fonts, Tilix layout and .desktop files for the operator terminals
 (pdp view, pdp con, tvcon, imlac, ...).
 
-%if %{with vendored}
+%if %{build_vendored}
 %package vendored
 Summary:        Prebuilt device simulators with no source in this tree
 Requires:       %{name}%{?_isa} = %{version}-%{release}
@@ -165,7 +186,7 @@ build from Source0, which has no blobs in it) for a distribution build.
 
 %prep
 %autosetup -n %{srcname}-%{version}
-%if %{with vendored}
+%if %{build_vendored}
 # An extra payload rather than a patch series, so it is unpacked by hand:
 # %autosetup owns Source0 and these are binaries that must not be in it. The
 # archive carries bare relative paths, so they land in the bin/ that the
@@ -174,6 +195,11 @@ build from Source0, which has no blobs in it) for a distribution build.
 %endif
 
 %build
+%if %{with vendored}
+%ifnarch aarch64
+echo "NOTE: --with vendored ignored on %_target_cpu: bin/ holds aarch64 binaries" >&2
+%endif
+%endif
 # The top-level Makefile reads CFLAGS/LDFLAGS from the environment and knows
 # how to hand them to simh's own makefile (which otherwise assembles its own
 # compile line and drops -lm -lpng -lz if it is handed an LDFLAGS=).
@@ -182,7 +208,7 @@ build from Source0, which has no blobs in it) for a distribution build.
 
 %install
 %make_install PREFIX=%{_prefix} VENDORBINDIR=%{_libdir}/pidp10/bin \
-    %{?with_vendored:WITH_VENDORED=yes}
+    %{?build_vendored:WITH_VENDORED=yes}
 
 # The product ("kiosk") build boots the cabinet out of the box. It only edits
 # preset files: a package must not run systemctl enable on someone's machine,
@@ -309,7 +335,7 @@ gtk-update-icon-cache -q -t -f %{_datadir}/icons/hicolor 2>/dev/null || :
 %{_datadir}/%{srcname}/view.json
 %{_datadir}/%{srcname}/pidp10tilix.conf
 
-%if %{with vendored}
+%if %{build_vendored}
 %files vendored
 %defattr(-,root,root,-)
 %dir %{_libdir}/%{srcname}

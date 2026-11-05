@@ -6,6 +6,7 @@
 #   packaging/build-rpm.sh [topdir]                    default topdir: ./rpmbuild
 #   packaging/build-rpm.sh --with-vendored [topdir]    also build pidp10-vendored
 #   packaging/build-rpm.sh --worktree [topdir]         package the work tree
+#   packaging/build-rpm.sh --srpm-only [topdir]        just the SRPM (for COPR)
 #
 # By default the source tarballs are `git archive` of HEAD: what ships is what
 # is committed, which is the only version of the project that is reproducible
@@ -31,10 +32,13 @@ cd "$root"
 
 vendored=0
 worktree=0
-while [ "${1:-}" = "--with-vendored" ] || [ "${1:-}" = "--worktree" ]; do
+srpm_only=0
+while [ "${1:-}" = "--with-vendored" ] || [ "${1:-}" = "--worktree" ] || \
+      [ "${1:-}" = "--srpm-only" ]; do
 	case "$1" in
 	    --with-vendored) vendored=1 ;;
 	    --worktree)      worktree=1 ;;
+	    --srpm-only)     srpm_only=1 ;;
 	esac
 	shift
 done
@@ -94,8 +98,12 @@ else
 fi
 cp install/fedora/sysusers.d/30-pidp10.conf "$top/SOURCES/30-pidp10.conf"
 
-rpmbuild -ba --define "_topdir $top" \
+rpmbuild -b$([ "$srpm_only" = 1 ] && echo s || echo a) --define "_topdir $top" \
     --define "gitrev $rev" --define "gitdate $date" \
     "$with" "$here/pidp10.spec"
 
-echo "RPMs: $top/RPMS"
+if [ "$srpm_only" = 1 ]; then
+	ls -1 "$top"/SRPMS/*.src.rpm
+else
+	echo "RPMs: $top/RPMS"
+fi
