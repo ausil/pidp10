@@ -50,8 +50,10 @@ B       := $(abspath $(BUILDDIR))
 
 PDP10D   := src/pdp10
 PINCTRLD := src/utils/pinctrl
-SERVER_TOOLS := scansw10 pidp10-test
-ENGINES      := pdp10-ka pdp10-ki pdp10-kl pdp10-ks pdp6
+# Everything the pinctrl cmake build produces: the Raspberry Pi CLI, the panel
+# probe the engine unit asks, and the two cabinet tools.
+PANEL_BINS     := pinctrl pidp-gpio-probe scansw10 pidp10-test
+ENGINES        := pdp10-ka pdp10-ki pdp10-kl pdp10-ks pdp6
 VENDORED     := cbridge dm2500 dp3300 gecon gw imlac mkpty33 mlftp shutdown \
                 supdup tek4010 tv11 tvcon vt05 vt50 vt52 pidp10 pidp10.panama
 
@@ -79,7 +81,7 @@ SIMH_FLAGS = GCC='$(CC)' OPTIMIZE='$(CFLAGS) -DNDEBUG=1' \
 
 .PHONY: all engines panel tools sty st install clean clean-all
 
-all: engines panel tools $(if $(filter yes,$(WITH_STY)),sty st)
+all: engines panel $(if $(filter yes,$(WITH_STY)),sty st)
 
 $(B):
 	mkdir -p $(B)
@@ -90,10 +92,17 @@ $(B):
 engines: | $(B)
 	$(MAKE) -C $(PDP10D) $(SIMH_FLAGS) BIN=$(B)/ $(ENGINES)
 
-# --- GPIO tools and the panel probe ----------------------------------------
+# --- GPIO tools, panel probe, switch register, cabinet test ----------------
 # cmake, because pinctrl comes from Raspberry Pi OS that way. LTO is switched
 # off per target in its CMakeLists: the gpiochip_* tables are found through the
 # linker-provided __start_gpiochips and LTO deletes them as dead code.
+#
+# scansw10 and pidp10-test live here rather than in their own directories with
+# their own makefiles because all four programs are the same panel code: the
+# old copies of the two tools reached the hardware by mapping registers, so
+# they needed sudo, ran only on Raspberry Pi OS and could not tell a broken
+# panel driver from a broken panel. They go through pidp_panel now, like the
+# simulator does.
 panel: | $(B)
 	cmake -S $(PINCTRLD) -B $(B)/pinctrl-build \
 	    -DCMAKE_C_COMPILER='$(CC)' -DCMAKE_BUILD_TYPE=Release \
@@ -104,14 +113,8 @@ panel: | $(B)
 	    echo "NOTE: pidp-gpio-probe not built (needs libgpiod >= 2.0); the"\
 	         "front panel falls back to sim on kernels without /dev/gpiomem" >&2
 
-# --- panel diagnostics ------------------------------------------------------
-# Both read the GPIO registers through pinctrl's gpiolib, i.e. they are
-# Raspberry Pi OS tools; the supported panel path is pidp_panel.c.
-tools: | $(B)
-	for t in $(SERVER_TOOLS); do \
-	    $(MAKE) -C src/$$t CC='$(CC)' CFLAGS='$(CFLAGS)' LDFLAGS='$(LDFLAGS)'; \
-	    cp -f src/$$t/$$t $(B)/; \
-	done
+# Kept because muscle memory and old scripts call it; it is the same build.
+tools: panel
 
 # --- terminals (X11 + SDL; the st makefile builds in its source tree) -------
 # The sound directory is compiled in, not guessed at run time: the samples are
@@ -130,9 +133,12 @@ st: | $(B)
 # "make" (different flags, no network), and a silent rebuild there produces a
 # binary that was not tested by the test phase.
 install:
-	@missing=""; for f in $(ENGINES) pinctrl scansw10 pidp10-test; do \
+	@missing=""; for f in $(ENGINES) $(PANEL_BINS); do \
 	    [ -x $(B)/$$f ] || missing="$$missing $$f"; done; \
-	if [ "$$(echo $$missing)" != "" ]; then \
+	# pidp-gpio-probe is the one product that may legitimately be absent: it
+	# needs libgpiod, which a build host is not required to have.
+	missing="$$(echo $$missing | sed 's/ pidp-gpio-probe//')"; \
+	if [ "$${missing# }" != "" ]; then \
 	    echo "make install: not built in $(B):$$missing - run 'make' first" >&2; \
 	    [ "$${PIDP10_ALLOW_PARTIAL:-}" = 1 ] || exit 1; \
 	fi
@@ -148,7 +154,12 @@ install:
 	install -m 0755 $(B)/pinctrl $(B)/scansw10 $(B)/pidp10-test $(DESTDIR)$(BINDIR)/
 	@# pidp-gpio-probe is only built when libgpiod is present.
 	@-install -m 0755 $(B)/pidp-gpio-probe $(DESTDIR)$(BINDIR)/ 2>/dev/null
-	install -m 0644 $(PINCTRLD)/pinctrl-completion.bash $(DESTDIR)$(COMPLETIONDIR)/pinctrl
+	@# Completion files are sourced by bash, never executed; the upstream copy
+	@# opens with a shebang, which makes a linter demand an executable bit that
+	@# a file in datarootdir/completions must not have.
+	sed '1{/^\#!/d}' $(PINCTRLD)/pinctrl-completion.bash \
+	    > $(DESTDIR)$(COMPLETIONDIR)/pinctrl
+	chmod 0644 $(DESTDIR)$(COMPLETIONDIR)/pinctrl
 	@# helpers and user commands, with the paths rewritten
 	for h in install/fedora/libexec/*; do \
 	    $(SUBST) $$h > $(DESTDIR)$(LIBEXECDIR)/$$(basename $$h); \

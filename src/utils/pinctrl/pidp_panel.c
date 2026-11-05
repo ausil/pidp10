@@ -39,6 +39,21 @@ static struct timespec                  last_scan;
 
 /* -------------------------------------------------- config for the backends */
 
+static const int default_rows[PIDP_PANEL_ADDR] = { 4, 17, 27 };
+static const int default_cols[PIDP_PANEL_COLS] = { 21,20,16,12,7,8,25,24,23,
+                                                   18,10,9,11,5,6,13,19,26 };
+static const int default_latch                 = 22;
+
+void pidp_panel_default_config(pidp_panel_config *cfg)
+{
+	cfg->rows  = default_rows;
+	cfg->cols  = default_cols;
+	cfg->latch = default_latch;
+	if (cfg->hold_ns <= 0) cfg->hold_ns = 50000;   /* same as pidp10panel.c */
+	if (cfg->gap_ns  <  0) cfg->gap_ns  = 5000;
+	/* chip, backend and explicit_hw are the caller's to decide. */
+}
+
 const char *cfg_chip(void)
 {
 	return cfg.chip;

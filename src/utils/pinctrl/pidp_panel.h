@@ -89,6 +89,14 @@ typedef struct pidp_panel_config {
 	                         * failure is news; in auto mode it is not      */
 } pidp_panel_config;
 
+/* The PiDP-10 PCB wiring, kept in exactly one place: GPIO 4/17/27 as the three
+ * select lines, the 18 column lines shared by the LED anodes and the switch
+ * matrix, and GPIO 22 as the latch that picks the 74HC238 (LEDs) or the
+ * 74HC138 (switches). Anything that is not the simulator asks for these
+ * instead of repeating the numbers; the engine has its own copy only because
+ * simh exports the same arrays to its other front-panel files. */
+void pidp_panel_default_config(pidp_panel_config *cfg);
+
 /* Backend vtable: one file per way of reaching the hardware, dispatched to by
  * the selector in pidp_panel.c. Every operation must tolerate being called
  * when the hardware went away mid-run (a USB GPIO dongle, or simply an ioctl

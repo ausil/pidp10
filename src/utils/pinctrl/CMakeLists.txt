@@ -22,16 +22,19 @@ install(TARGETS pinctrl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES pinctrl-completion.bash RENAME pinctrl DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/bash-completion/completions")
 
 # ---------------------------------------------------------------------------
-# pidp-gpio-probe - is there a front panel on this machine?
+# Panel tools: pidp-gpio-probe (is a cabinet attached?), scansw10 (read the
+# maintenance switch register; the engine unit uses it to pick which system to
+# boot) and pidp10-test (bring-up test for a newly cabled cabinet).
 #
-# Used by the systemd engine unit (install/fedora/libexec/pidp10-engine) so
-# that "do we have blinkenlights" is answered by the same code that would have
-# to drive them, instead of by a `gpioinfo | grep gpio` that is true on every
-# machine which has GPIO at all.
+# All three reach the hardware through pidp_panel, so the answer they give is
+# produced by the same code that would have to drive the panel - which is also
+# why the engine unit asks pidp-gpio-probe instead of running gpioinfo. Each
+# works on Fedora (gpiod), on Raspberry Pi OS (register mapping) and with no
+# cabinet at all (sim).
 #
-# It only needs the gpiod backend plus the shared selector; the register
-# mapping backend is deliberately left out (probing it would mean mapping
-# device memory just to ask a question).
+# Unlike the standalone `pinctrl` CLI these link the gpiomem backend as well:
+# it is never mapped unless the operator asks for it by name, and a tool that
+# could not name it could not test a Raspberry Pi OS cabinet either.
 # ---------------------------------------------------------------------------
 find_package(PkgConfig)
 if(PkgConfig_FOUND)
@@ -39,14 +42,34 @@ if(PkgConfig_FOUND)
 endif()
 
 if(LIBGPIOD_FOUND)
-    add_executable(pidp-gpio-probe
-        pidp_gpio_probe.c pidp_panel.c pidp_panel_sim.c pidp_panel_gpiod.c)
-    target_compile_definitions(pidp-gpio-probe PRIVATE
-        PIDP10_HAVE_GPIOD=1 PIDP10_HAVE_GPIOMEM=0)
-    target_include_directories(pidp-gpio-probe PRIVATE ${LIBGPIOD_INCLUDE_DIRS})
-    target_link_libraries(pidp-gpio-probe ${LIBGPIOD_LIBRARIES})
-    install(TARGETS pidp-gpio-probe RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    set(PANEL_GPIOD_SRC pidp_panel_gpiod.c)
+    set(PANEL_HAVE_GPIOD 1)
 else()
-    message(STATUS "libgpiod >= 2.0 not found: building pinctrl only "
-                   "(no pidp-gpio-probe, front panel will fall back to sim)")
+    # The selector's #if keeps every libgpiod reference out of the build, so
+    # the tools still build here; they drive gpiomem, or say there is no panel.
+    set(PANEL_GPIOD_SRC "")
+    set(PANEL_HAVE_GPIOD 0)
+    message(STATUS "libgpiod >= 2.0 not found: panel tools are built without "
+                   "the character-device backend (PIDP10_PANEL=gpiod will fail)")
 endif()
+
+set(PANEL_SRC
+    pidp_panel.c pidp_panel_sim.c pidp_panel_gpiomem.c ${PANEL_GPIOD_SRC}
+    gpiolib.c util.c gpiochip_bcm2835.c gpiochip_bcm2712.c gpiochip_rp1.c)
+
+function(pidp_panel_tool name)
+    add_executable(${name} ${ARGN} ${PANEL_SRC})
+    target_compile_definitions(${name} PRIVATE
+        PIDP10_HAVE_GPIOD=${PANEL_HAVE_GPIOD} PIDP10_HAVE_GPIOMEM=1)
+    target_include_directories(${name} PRIVATE ${LIBGPIOD_INCLUDE_DIRS})
+    target_link_libraries(${name} pthread ${LIBGPIOD_LIBRARIES})
+    set_target_properties(${name} PROPERTIES INTERPROCEDURAL_OPTIMIZATION OFF)
+    target_compile_options(${name} PRIVATE -fno-lto)
+    target_link_options(${name} PRIVATE -fno-lto)
+    install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endfunction()
+
+pidp_panel_tool(pidp-gpio-probe pidp_gpio_probe.c)
+pidp_panel_tool(scansw10 scansw10.c)
+pidp_panel_tool(pidp10-test pidp10_test.c)
+

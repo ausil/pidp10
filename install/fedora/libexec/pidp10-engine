@@ -93,10 +93,14 @@ esac
 # With a live panel and no explicit boot number, ask the maintenance panel
 # switch what to boot (that is what scansw10 is for).
 if [ "$have_instance" -eq 0 ] && [ "$panel_live" -eq 1 ] && \
-   [ -x "$(command -v scansw10 || true)" ]; then
-	if sw=$(scansw10 </dev/null 2>/dev/null); then
-		boot_number=$sw
-		echo "pidp10-engine: front panel switch selects boot $boot_number"
+   command -v scansw10 >/dev/null 2>&1; then
+	# scansw10 prints the 18-bit maintenance switch register on stdout, in
+	# decimal; the selection table below is keyed on its low 12 bits, which
+	# is also what simh's attach numbers are compared against. (It used to
+	# report the value in its exit status, and an exit status is eight bits.)
+	if sw=$(scansw10 </dev/null 2>/dev/null) && [ -n "$sw" ]; then
+		boot_number=$(( sw & 07777 ))
+		echo "pidp10-engine: front panel switches select boot $boot_number"
 	fi
 fi
 

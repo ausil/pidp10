@@ -11,13 +11,13 @@ ka_dskb2.rp3
 ka_dskb3.rp3  
 tops603ka.zip
 src/pdp10/BIN/
-# tools built from src/ (installed by packaging/pidp10-install.sh from the build,
-# never from a copy committed to git: a committed ELF is a stale ELF)
-src/scansw10/scansw10
-src/pidp10-test/pidp10-test
+# build products that used to be committed (make install takes them from
+# ./build, never from a copy in the tree: a committed ELF is a stale ELF)
 src/st-0.9.2/st
 src/sty33/sty
 src/sty33/wintest
 src/utils/pinctrl/pinctrl
 src/utils/pinctrl/pidp-gpio-probe
+src/utils/pinctrl/scansw10
+src/utils/pinctrl/pidp10-test
 build/

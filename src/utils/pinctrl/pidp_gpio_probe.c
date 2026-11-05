@@ -33,10 +33,14 @@
 
 #include "pidp_panel.h"
 
-static const int rows[PIDP_PANEL_ADDR] = { 4, 17, 27 };
-static const int cols[PIDP_PANEL_COLS] = { 21,20,16,12,7,8,25,24,23,
-                                           18,10,9,11,5,6,13,19,26 };
-static const int latch = 22;
+/* The PCB wiring, from the panel library rather than a copy kept here. */
+static pidp_panel_config wiring(void)
+{
+	pidp_panel_config c = { NULL, NULL, NULL, 0, 50000, 5000, NULL, 0 };
+
+	pidp_panel_default_config(&c);
+	return c;
+}
 
 static int backend_says_hardware(char *buf, size_t len)
 {
@@ -57,15 +61,16 @@ static int backend_says_hardware(char *buf, size_t len)
 
 static int do_pins(void)
 {
+	pidp_panel_config c = wiring();
 	int i;
 
 	printf("row select :");
 	for (i = 0; i < PIDP_PANEL_ADDR; i++)
-		printf(" GPIO%d", rows[i]);
+		printf(" GPIO%d", c.rows[i]);
 	printf("\ncolumns    :");
 	for (i = 0; i < PIDP_PANEL_COLS; i++)
-		printf(" GPIO%d", cols[i]);
-	printf("\nlatch      : GPIO%d\n", latch);
+		printf(" GPIO%d", c.cols[i]);
+	printf("\nlatch      : GPIO%d\n", c.latch);
 	printf("(legacy BCM numbers; == gpiochip line offsets on "
 	       "pinctrl-bcm2835 and pinctrl-rp1)\n");
 	return 0;
@@ -89,8 +94,10 @@ static int do_selftest(int secs)
 	unsigned long rows_done = 0, frames_done = 0, bad_reads = 0, due = 0;
 	uint32_t pattern = 0;
 	struct timespec t0, now;
-	pidp_panel_config c = { NULL, rows, cols, 22, 50000, 5000, "sim", 0 };
+	pidp_panel_config c = wiring();
 	int row;
+
+	c.backend = "sim";
 
 	if (secs < 1)
 		secs = 3;
