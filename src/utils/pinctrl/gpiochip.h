@@ -3,8 +3,16 @@
 
 #include "gpiolib.h"
 
+/*
+ * The chip tables are found through the linker-provided __start_gpiochips /
+ * __stop_gpiochips symbols, so no translation unit ever names them. `used`
+ * says so: without it LTO (which Fedora passes in CFLAGS) treats them as dead
+ * unreferenced globals and drops them, and the link then fails with
+ * "undefined reference to `__start_gpiochips'".
+ */
 #define DECLARE_GPIO_CHIP(name, compatible, iface, size, data) \
-    GPIO_CHIP_T name ## _chip __attribute__ ((section ("gpiochips"))) = \
+    GPIO_CHIP_T name ## _chip \
+        __attribute__ ((section ("gpiochips"), used)) = \
     { #name, compatible, iface, size, data }
 
 typedef struct GPIO_CHIP_INTERFACE_ GPIO_CHIP_INTERFACE_T;
