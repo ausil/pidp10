@@ -3,8 +3,7 @@
 #
 # build-rpm.sh - build the RPMs from this tree.
 #
-#   packaging/build-rpm.sh [topdir]                    default topdir: ./rpmbuild
-#   packaging/build-rpm.sh --with-vendored [topdir]    also build pidp10-vendored
+#   packaging/build-rpm.sh [topdir]                    default topdir: ./dist-rpm
 #   packaging/build-rpm.sh --worktree [topdir]         package the work tree
 #   packaging/build-rpm.sh --srpm-only [topdir]        just the SRPM (for COPR)
 #
@@ -18,11 +17,11 @@
 # untracked files, minus what .gitignore excludes). For testing a change before
 # committing it. Not for anything that leaves the machine.
 #
-# Source0 never contains bin/, the 46 MB of prebuilt AI Lab peripheral
-# simulators that have no source in this tree, so the tarball a distribution
-# builds from has no unreviewed ELF in it. --with-vendored additionally
-# produces pidp10-vendored-<version>.tar.gz (Source2) and builds the subpackage
-# that installs them, for a cabinet.
+# Source0 is the whole tree. Nothing in it is a prebuilt binary: the AI Lab
+# device simulators the boot scripts call (cbridge, tv11, tvcon, imlac, ...) are
+# separate programs with their own upstreams and their own packages, picked up
+# off PATH, so there is no blob tarball, no second Source and no --with switch
+# to opt into shipping someone's ELF.
 
 set -euo pipefail
 
@@ -30,19 +29,16 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
 cd "$root"
 
-vendored=0
 worktree=0
 srpm_only=0
-while [ "${1:-}" = "--with-vendored" ] || [ "${1:-}" = "--worktree" ] || \
-      [ "${1:-}" = "--srpm-only" ]; do
+while [ "${1:-}" = "--worktree" ] || [ "${1:-}" = "--srpm-only" ]; do
 	case "$1" in
-	    --with-vendored) vendored=1 ;;
-	    --worktree)      worktree=1 ;;
-	    --srpm-only)     srpm_only=1 ;;
+	    --worktree)  worktree=1 ;;
+	    --srpm-only) srpm_only=1 ;;
 	esac
 	shift
 done
-top=$(realpath -m "${1:-rpmbuild}")
+top=$(realpath -m "${1:-dist-rpm}")
 
 version=$(sed -n 's/^%global simh_version \([0-9.]*\).*/\1/p' "$here/pidp10.spec" | head -1)
 [ -n "$version" ] || { echo "build-rpm: cannot read simh_version from the spec" >&2; exit 1; }
@@ -60,8 +56,8 @@ make_tarball()
 	local dest=$1 prefix=$2; shift 2
 
 	if [ "$worktree" = 1 ]; then
-		# git ls-files keeps .gitignore in force, so build/, rpmbuild/ and the
-		# stray objects under src/ stay out the same way they do for git.
+		# git ls-files keeps .gitignore in force, so build/, dist-rpm/ and
+		# the stray objects under src/ stay out the same way they do for git.
 		# (tar has no --prefix; --transform with the S flag is what rewrites
 		# the name of a file *and* of what a symlink points at.)
 		git ls-files -z --cached --others --exclude-standard -- "$@" |
@@ -82,28 +78,39 @@ elif [ -n "$(git status --porcelain)" ]; then
 	git status --short | head -20 >&2
 fi
 
-mkdir -p "$top"/{SOURCES,BUILD,RPMS,SRPMS}
+# Two directories: the sources go to dist/ (the _sourcedir), the products
+# land flat in $top. No _topdir is set, so no tree of SOURCES/BUILD/BUILDROOT
+# appears in either - the rpmbuild scratch stays in ~/rpmbuild, where it
+# belongs.
+# _rpmfilename keeps the arch out of the path (its default is
+# "%{ARCH}/%{NAME}-..." - the arch subdirectory is the filename, so overriding
+# that is what flattens). The %% are load-bearing: with a single %, NAME is
+# expanded when the --define is processed - the spec's Name:, once, for every
+# subpackage - and pidp10-panel, -debuginfo and -debugsource are all written
+# over the same pidp10-...rpm; %% defers it to packaging time, where rpm
+# rebinds NAME per package. Same reason rpm's own macros file spells it %%.
+dist=${DIST_DIR:-$root/dist}
+mkdir -p "$top" "$dist"
 
-# Source0: everything except the prebuilt peripherals. The prefix must match
-# %{name}-%{version} or %autosetup -n fails.
-make_tarball "$top/SOURCES/$topdir_prefix.tar.gz" "$topdir_prefix" . ':!bin'
+# Source0: the tree. The prefix must match %{name}-%{version} or %autosetup -n
+# fails.
+make_tarball "$dist/$topdir_prefix.tar.gz" "$topdir_prefix" .
 
-if [ "$vendored" = 1 ]; then
-	# No prefix: %prep unpacks this straight into bin/ of the source tree, so
-	# the Makefile's WITH_VENDORED path needs no extra variable.
-	make_tarball "$top/SOURCES/$name-vendored-$version.tar.gz" "" bin
-	with=--with=vendored
-else
-	with=--without=vendored
-fi
-cp install/fedora/sysusers.d/30-pidp10.conf "$top/SOURCES/30-pidp10.conf"
+cp install/fedora/sysusers.d/30-pidp10.conf "$dist/30-pidp10.conf"
+# Source2 for the same reason as Source1: the tmpfiles scriptlet is generated
+# at spec-parse time, and %(cat %SOURCE2) has to find the file before %install
+# puts anything anywhere.
+cp install/fedora/tmpfiles.d/pidp10.conf "$dist/pidp10.conf"
 
-rpmbuild -b$([ "$srpm_only" = 1 ] && echo s || echo a) --define "_topdir $top" \
+rpmbuild -b$([ "$srpm_only" = 1 ] && echo s || echo a) \
+    --define "_sourcedir $dist" \
+    --define "_rpmdir $top" --define "_srcrpmdir $top" \
+    --define "_rpmfilename %%{NAME}-%%{VERSION}-%%{RELEASE}.%%{ARCH}.rpm" \
     --define "gitrev $rev" --define "gitdate $date" \
-    "$with" "$here/pidp10.spec"
+    "$here/pidp10.spec"
 
 if [ "$srpm_only" = 1 ]; then
-	ls -1 "$top"/SRPMS/*.src.rpm
+	ls -1 "$top"/*.src.rpm
 else
-	echo "RPMs: $top/RPMS"
+	echo "RPMs: $top"
 fi

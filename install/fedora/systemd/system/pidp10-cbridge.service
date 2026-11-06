@@ -5,11 +5,12 @@
 # sandbox instead of piggy-backing on whoever started the PDP-10.
 #
 # Upstream started it from inside the ITS boot script:
-#   !screen -dmS cbridge /usr/lib/pidp10/bin/cbridge -c /usr/share/pidp10/conf/cbridge.conf
+#   !screen -dmS cbridge /opt/pidp10/bin/cbridge -c .../cbridge.conf
 # with a preceding "!pgrep cbridge && pkill -2 cbridge && sleep 3", and the
 # comment "bug? seems we must be in cbridge home dir". Hence WorkingDirectory.
 #
-# Note cbridge publishes /tmp/chaos_stream, which bin/gateway.sh waits for, so
+# Note cbridge publishes /tmp/chaos_stream, which gateway.sh (from
+# Chaosnet/chaosnet-tools) waits for, so
 # PrivateTmp must stay off.
 #
 # Install to /usr/lib/systemd/system/ ;
@@ -22,16 +23,16 @@ After=network-online.target
 Wants=network-online.target
 Before=pidp10.target
 
-# cbridge ships in pidp10-vendored (no source in this tree). Without that
-# package the unit is skipped instead of entering a start failure loop.
-ConditionPathExists=/usr/lib/pidp10/bin/cbridge
+# cbridge is bictorv/chaosnet-bridge, its own package on PATH. Without it the
+# unit is skipped instead of entering a start failure loop.
+ConditionPathExists=/usr/bin/cbridge
 
 [Service]
 Type=exec
 EnvironmentFile=-/etc/pidp10/pidp10.conf
 User=pidp10
 WorkingDirectory=/var/lib/pidp10
-ExecStart=/usr/lib/pidp10/bin/cbridge -c /usr/share/pidp10/conf/cbridge.conf
+ExecStart=/usr/bin/cbridge -c /usr/share/pidp10/conf/cbridge.conf
 ExecStartPost=/usr/bin/sleep 1
 Restart=on-failure
 RestartSec=3

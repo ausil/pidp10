@@ -18,8 +18,9 @@ After=graphical-session.target
 PartOf=pidp10.target
 Before=pidp10.service pidp10@.service
 
-# tv11 ships in pidp10-vendored; skip cleanly when it is not installed.
-ConditionPathExists=/usr/lib/pidp10/bin/tv11
+# tv11 is aap/pdp11's Knight TV display server, its own package on PATH;
+# skip cleanly when it is not installed.
+ConditionPathExists=/usr/bin/tv11
 
 [Service]
 Type=exec
@@ -27,7 +28,7 @@ EnvironmentFile=-/etc/pidp10/pidp10.conf
 Environment=DISPLAY=:0
 Environment=SDL_VIDEODRIVER=x11
 WorkingDirectory=/var/lib/pidp10
-ExecStart=/usr/lib/pidp10/bin/tv11 -s 4 -p 10011 localhost
+ExecStart=/usr/bin/tv11 -s 4 -p 10011 localhost
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=15

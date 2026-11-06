@@ -31,18 +31,18 @@ fi
 # boot, which panel driver, which console port - and the layout is not in it, so
 # a PIDP10_STATE set on the command line still picks a scratch tree.
 [ -r /etc/pidp10/pidp10.conf ] && . /etc/pidp10/pidp10.conf
-: "${PIDP10_BIN:=/usr/lib/pidp10/bin}"
 : "${PIDP10_STATE:=/var/lib/pidp10}"
 
-# The boot script says `cbridge`, not `/usr/lib/pidp10/bin/cbridge`: a bare
-# name is looked up on PATH and then in the vendored directory, so the same
-# boot script works from a checkout and from a package install.
+# The boot script says `cbridge`, not `/usr/bin/cbridge`: a bare name is looked
+# up on PATH and then in a checkout, so the same boot script works from a
+# checkout and from a package install. The device sims are separate packages
+# (cbridge from chaosnet-bridge, tv11 from pdp11, ...); when one is missing the
+# unit that needs it is skipped by its own ConditionPathExists.
 cmd=$1; shift
 if [ "${cmd#*/*}" = "$cmd" ]; then
 	found=$(command -v "$cmd" 2>/dev/null || true)
-	[ -n "$found" ] || found=${PIDP10_BIN:-}/$cmd
 	[ -x "$found" ] || found=${PIDP10_HOME:-}/bin/$cmd
-	[ -x "$found" ] || { echo "pidp10-spawn: $cmd not found (package pidp10-vendored?)" >&2; exit 127; }
+	[ -x "$found" ] || { echo "pidp10-spawn: $cmd not found (install its package, or set PIDP10_HOME to a checkout?)" >&2; exit 127; }
 	cmd=$found
 fi
 

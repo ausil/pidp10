@@ -1,0 +1,83 @@
+.Dd November 5, 2026
+.Dt PDPCONTROL 1
+.Os
+.Sh NAME
+.Nm pdpcontrol
+.Nd control the PiDP-10 engine
+.Sh SYNOPSIS
+.Nm
+.Op Cm user | system
+.Ar subcommand
+.Op Ar boot
+.Sh DESCRIPTION
+.Nm
+starts, stops and inspects the PDP-10 engine.
+Systemd owns the process: with the default
+.Cm user
+scope
+.Nm
+drives the per-user
+.Nm pidp10
+units (the ones that need
+.Ev DISPLAY
+and PipeWire);
+.Cm system
+drives the system-scope unit
+.Ar pidp10-engine@boot Ns No \&.service .
+.Pp
+Subcommands:
+.Bl -tag -width restart
+.It Cm start Op Ar boot
+Boot a system.
+.Ar boot
+is the octal switch-register value the maintenance panel would be set to;
+with no front panel attached you must give one (1 boots ITS, 2 TOPS-10 on
+the stock selections file).
+Which system directory a number boots is decided by
+.Pa /usr/share/pidp10/systems/selections ;
+with no
+.Ar boot
+the switch register decides, which sits at zero on a machine without a
+front panel.
+.It Cm stop
+Polite stop: the simh
+.Ic exit
+command goes in through the console telnet port (via the
+.Nm pidp10-stop
+helper) so disk buffers are flushed, rather than the old
+.Ic pkill -9 .
+.It Cm restart Op Ar boot
+Stop, then start.
+.It Cm status
+Which units are active.
+.It Cm stat
+Engine state through the console port (registers, halt/cont).
+.It Cm console
+Attach to the simh console prompt.
+.It Cm halt
+Halt the CPU without stopping the engine.
+.El
+.Pp
+Operator policy is read from
+.Pa /etc/pidp10/pidp10.conf
+(the same file the units load), so
+.Ev PIDP10_BOOT ,
+.Ev PIDP10_PANEL
+and
+.Ev PIDP10_CONSOLE_PORT
+set there apply here too.
+.Sh EXIT STATUS
+.Ex -std
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic pdpcontrol start 1
+Boot ITS on the user units.
+.It Ic pdpcontrol system status
+What the system-scope engine is doing.
+.It Ic pdpcontrol stop
+Stop whatever is running, flushing disks.
+.El
+.Sh SEE ALSO
+.Xr pdp 1 ,
+.Xr systemctl 1 ,
+.Pa /usr/share/doc/pidp10/README.md

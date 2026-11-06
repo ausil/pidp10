@@ -20,7 +20,6 @@ set -euo pipefail
 # a PIDP10_STATE set on the command line still picks a scratch tree.
 [ -r /etc/pidp10/pidp10.conf ] && . /etc/pidp10/pidp10.conf
 : "${PIDP10_LIBEXEC:=/usr/libexec/pidp10}"
-: "${PIDP10_BIN:=/usr/lib/pidp10/bin}"
 : "${PIDP10_STATE:=/var/lib/pidp10}"
 : "${PIDP10_SOUNDS:=/usr/share/pidp10/sounds}"
 : "${PIDP10_CONSOLE_PORT:=1025}"
@@ -32,7 +31,6 @@ if [ "${PIDP10_STY_SILENT}" = "1" ]; then
 fi
 
 sty=$(command -v sty || true)
-[ -x "$sty" ] || sty=$PIDP10_BIN/sty
 [ -x "$sty" ] || sty=${PIDP10_HOME:-}/src/sty33/sty
 [ -x "$sty" ] || sty=${PIDP10_HOME:-}/bin/sty
 [ -x "$sty" ] || { echo "pidp10-teletype: sty not found (build src/sty33)" >&2; exit 127; }

@@ -1,0 +1,69 @@
+# Local rpmlint overrides for the PiDP-10 packages.
+#
+#   make rpmlint RPM_DIR=/tmp/rpb
+#
+# (RPMs only - see the Makefile for why the bare spec is not an argument.)
+# Each filter below is a known false positive or a recorded upstream state;
+# none hides a defect, and each says when it can go. The spec header
+# summarises the same list for whoever reads the spec instead of the tree.
+
+# rpmlint config files are flat key = value TOML (like
+# /etc/xdg/rpmlint/fedora.toml), so Filters must not be nested in a section.
+Filters = [
+    # Domain vocabulary, not typos: the PDP-10 world is spelled this way
+    # (Lars Brinkhoff's sites, DEC manuals, the AI Lab memos). Matched on
+    # the quoted token only, so a genuine typo elsewhere still reports.
+    # (Basic string because a TOML literal string cannot contain ' at all.)
+    ".*spelling-error \\('(blinkenlights?|cbridge|dev|gecon|gpio|gpiochip|gw|imlac|pdp|supdup|tvcon|upstreams)'.*",
+
+    # pidp10 is a new service account created by sysusers.d (the Fedora
+    # guidelines' way). Drop when the name is in rpmlint's users-groups
+    # list, /etc/xdg/rpmlint/users-groups.toml.
+    '.*non-standard-uid .*pidp10.*',
+    '.*non-standard-gid .*pidp10.*',
+
+    # Man pages: the front doors ship their own (man/), st ships upstream's.
+    # What is left has no page because it has no interface of its own: the
+    # engines are the shared simh scp (upstream simh ships no pages either),
+    # pinctrl/pidp-gpio-probe/pidp10-test document themselves with --help,
+    # and scansw10/pidp10-fetch-images/sty are the operator helpers
+    # described in packaging/README.md. Drop an entry when a real page
+    # exists.
+    '.*no-manual-page-for-binary (pdp10-(ka|ki|kl|ks)|pdp6|sty|scansw10|pidp10-fetch-images|pidp-gpio-probe|pidp10-test|pinctrl)($| .*)',
+
+    # The Exec= lines run through nohup (coreutils: present on every
+    # install, owned by no package's %%files) and open a terminal emulator
+    # that is Recommends- by design - a GNOME box must get pidp10-ui
+    # without pulling LXDE. The entry points themselves (pdp, pdpcontrol)
+    # are owned by pidp10, which ui Requires.
+    '.*desktopfile-without-binary .*(nohup|lxterminal)($| .*)',
+
+    # ui's payload is data (icons, fonts, desktop entries, the tilix
+    # layout); its documentation is the main package's, which it Requires.
+    # (panel got a real %doc instead of a filter: the pinctrl README.)
+    'pidp10-ui.*no-documentation.*',
+
+    # /var/log/pidp10 holds the console transcript and cbridge log - a
+    # keystroke-rate trickle from one operator's session, documented in
+    # packaging/README.md's state table. Revisit if anything ever writes
+    # unboundedly there.
+    '.*log-files-without-logrotate .*/var/log/pidp10.*',
+
+    # The versioned group(pidp10) provide comes from the sysusers fragment,
+    # the unversioned duplicate from the file-owner and tmpfiles-user
+    # generators; the package must own the state dirs and name the account,
+    # so no spec change removes the second one. See the spec header.
+    '.*useless-provides group\(pidp10\).*',
+
+    # Release carries the snapshot identity (gitdate/gitrev) that a
+    # hand-written changelog entry cannot know; the version matches. The
+    # alternatives are %autochangelog (hides the curated entries) or
+    # editing the changelog on every build.
+    '.*incoherent-version-in-changelog .*4\.1\.0-1.*',
+
+    # Source0 has no URL because there is nothing to download: it is a
+    # git archive of this repository, made at the top of the build by
+    # packaging/build-rpm.sh (or by COPR's clone). Pointing it at a tarball
+    # nobody uploads would make the SRPM claim a source it cannot verify.
+    '.*invalid-url Source0: .*\.tar\.gz.*',
+]

@@ -25,7 +25,6 @@ set -euo pipefail
 [ -r /etc/pidp10/pidp10.conf ] && . /etc/pidp10/pidp10.conf
 : "${PIDP10_PREFIX:=/usr/share/pidp10}"
 : "${PIDP10_LIBEXEC:=/usr/libexec/pidp10}"
-: "${PIDP10_BIN:=/usr/lib/pidp10/bin}"
 : "${PIDP10_STATE:=/var/lib/pidp10}"
 : "${PIDP10_SYSTEMS:=$PIDP10_PREFIX/systems}"
 : "${PIDP10_SELECTIONS:=$PIDP10_SYSTEMS/selections}"
@@ -76,7 +75,6 @@ case "$PIDP10_PANEL" in
 		# (Broadcom controller, enough lines, every panel line free) and
 		# honours PIDP10_GPIO_CHIP, so there is one answer, not two.
 		probe=$(command -v pidp-gpio-probe || true)
-		[ -x "$probe" ] || probe=$PIDP10_BIN/pidp-gpio-probe
 		[ -x "$probe" ] || probe=$(dirname "$PIDP10_PREFIX")/bin/pidp-gpio-probe
 		if [ -x "$probe" ]; then
 			"$probe" --check >/dev/null 2>&1 && panel_live=1
@@ -158,12 +156,11 @@ export PIDP10_CONSOLE_PORT PIDP10_PANEL PIDP10_GPIO_CHIP
 
 # The engine itself: from PATH on a packaged system, from the checkout when
 # PIDP10_HOME points at one. A developer runs this from a checkout, where the
-# engine they just built is in src/pdp10/BIN - prefer that over the prebuilt
-# copy committed under bin/, which is exactly how a fix appears not to work.
+# engine they just built is in src/pdp10/BIN - prefer that over the installed
+# one, which is exactly how a fix appears not to work.
 pidp_path=$(command -v "$pidp_bin" || true)
 [ -x "$pidp_path" ] || pidp_path=${PIDP10_HOME:-}/src/pdp10/BIN/$pidp_bin
 [ -x "$pidp_path" ] || pidp_path=$(dirname "$PIDP10_PREFIX")/bin/$pidp_bin
-[ -x "$pidp_path" ] || pidp_path=$PIDP10_BIN/$pidp_bin
 [ -x "$pidp_path" ] || pidp_path=${PIDP10_HOME:-}/bin/$pidp_bin
 [ -x "$pidp_path" ] || die "$pidp_bin not found (build src/pdp10 with: make PIDP10=1)"
 

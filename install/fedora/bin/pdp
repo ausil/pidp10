@@ -8,8 +8,8 @@
 # no csh, and no dependency on the tree living at one particular path.
 #
 # The difference that matters on Fedora: programs are looked up on PATH, then in
-# $PIDP10_BIN (the vendored, no-source set), then in a checkout. Nothing here
-# assumes /opt/pidp10.
+# $PIDP10_BIN (empty by default: an extra directory for a locally built device
+# sim), then in a checkout. Nothing here assumes /opt/pidp10.
 
 set -uo pipefail
 
@@ -18,7 +18,7 @@ set -uo pipefail
 # boot, which panel driver, which console port - and the layout is not in it, so
 # a PIDP10_STATE set on the command line still picks a scratch tree.
 [ -r /etc/pidp10/pidp10.conf ] && . /etc/pidp10/pidp10.conf
-: "${PIDP10_BIN:=/usr/lib/pidp10/bin}"
+: "${PIDP10_BIN:=}"
 : "${PIDP10_STATE:=/var/lib/pidp10}"
 : "${PIDP10_CONSOLE_PORT:=1025}"
 
@@ -48,8 +48,9 @@ The engine itself is a systemd unit: pdpcontrol start [boot], pdpcontrol status.
 EOF
 }
 
-# Resolve a client program: PATH first (packages install engines there), then
-# the vendored directory, then a development checkout.
+# Resolve a client program: PATH first (that is where this package and the
+# device-sim packages put things), then $PIDP10_BIN for something built locally,
+# then a development checkout.
 pdp_tool() {
 	local t=$1 f
 	if [ "${t#*/*}" != "$t" ]; then
@@ -67,9 +68,9 @@ pdp_tool() {
 missing() {
 	echo "pdp: $1 not found." >&2
 	case "$1" in
-		sty|vt52|vt05|vt50|tvcon|tek4010|imlac|dp3300|dm2500)
-			echo "pdp: it is a prebuilt binary - install pidp10-vendored" >&2 ;;
-		*)	echo "pdp: build it from src/, or install pidp10-vendored" >&2 ;;
+		vt52|vt05|vt50|tvcon|tek4010|imlac|dp3300|dm2500|cbridge|tv11|supdup|gw|mlftp|shutdown|mkpty33)
+			echo "pdp: $1 is a device simulator: its own package, see packaging/README.md" >&2 ;;
+		*)	echo "pdp: build it from src/ with make, or install its package" >&2 ;;
 	esac
 	return 1
 }

@@ -11,9 +11,10 @@ state in `/var/lib`, services managed by systemd, and no `chmod +s` anywhere.
 | `/usr/bin/pdp10-{ka,ki,kl,ks}`, `/usr/bin/pdp6` | the simh engines | no |
 | `/usr/bin/{sty,st,scansw10}` | terminals and the maintenance-switch reader the engine unit calls | no |
 | `/usr/bin/{pdp,pdpcontrol}` | user front doors | no |
+| `/usr/share/man/man1/{pdp,pdpcontrol}.1` | their pages (the engines and panel tools are driven through the units; their interface is documented here) | no |
 | `/usr/bin/pidp10-fetch-images` | fetches the OS/media images into the state tree (the package ships none) | no |
 | `/usr/bin/{pinctrl,pidp-gpio-probe,pidp10-test}` | GPIO inspection, "is a cabinet attached?", cabinet bring-up test (`pidp10-panel`) | no |
-| `%{_libdir}/pidp10/bin/` | prebuilt device simulators with no source in this tree (`pidp10-vendored`: cbridge, tv11, tvcon, imlac, vt05/50/52, ...) | no |
+| `/usr/bin/{cbridge,tv11,tvcon,imlac,vt05,vt50,vt52,dp3300,dm2500,gecon,tek4010,supdup,gw}` | the device sims the boot scripts call - **not from this package**: each has its own upstream and its own spec (see "The device sims") | no |
 | `/usr/share/pidp10/systems/` | `boot.pi` / `boot.pidp` scripts and read-only system data | no |
 | `/usr/share/pidp10/{conf,sounds,view.json}` | cbridge.conf, chaos-hosts, `.wav` samples, browser panel | no |
 | `/usr/libexec/pidp10/` | `pidp10-engine`, `pidp10-teletype`, `pidp10-spawn`, `pidp10-stop`, `pidp10-terminal` | no |
@@ -32,10 +33,10 @@ The top-level `Makefile`, and nowhere else:
 
 ```sh
 make                           # everything into ./build
-make install DESTDIR=/tmp/root PREFIX=/usr LIBEXECDIR=... VENDORBINDIR=...
+make install DESTDIR=/tmp/root PREFIX=/usr LIBEXECDIR=... DATADIR=...
 ```
 
-It owns `PREFIX BINDIR LIBEXECDIR DATADIR VENDORBINDIR SYSCONFDIR UNITDIR
+It owns `PREFIX BINDIR LIBEXECDIR DATADIR SYSCONFDIR UNITDIR
 SYSUSERSDIR TMPFILESDIR UDEVDIR STATEDIR ...` and rewrites them into the units,
 the helpers and the front doors at install time (`SUBST`), the same way the
 `-DPIDP10_SOUNDS_DIR=...` define puts the sample directory into the Teletype at
@@ -65,66 +66,71 @@ The consequences worth knowing:
   `./build`, and the committed ELFs that used to sit next to the sources are
   gone from git (an installer that falls back to whatever is lying in `src/`
   ships a stale one silently).
-* The same applies to `bin/`. What remains tracked there is the set with no
-  source in this tree, plus `pidp10.panama`. The committed engines
+* Nothing is installed from `bin/` either, and nothing under it is tracked: it
+  is scratch for whatever `make` dropped there and whatever prebuilt sim someone
+  fetched to try. Installed data sits with what uses it - the Teletype
+  recordings are `src/sty33/sounds/*.wav`, which is where `sounds.c` expects
+  them to have come from - or under `install/fedora/conf` for config this
+  project writes (`cbridge.conf`, `chaos-hosts`, `init.ini`, `gt40.simh`,
+  `imlac.simh`, `ssv22.iml`, `bootvt.img`). Keeping that data in `bin/` had made
+  it a *payload* of the prebuilt-ELF tarball, so a build without that tarball
+  silently lost the sounds and the Chaosnet config; installs are unguarded now,
+  so a missing data file fails the build instead. The committed engines
   (`pdp10-{ka,ki,kl,ks}`, `pdp6`), the `pdp10-*.2024` snapshots, `st`, `sty`,
-  `scansw10`, `pidp10-test`, `binaries-for-X86-64.tar.gz` and `pidp10` are
-  untracked - `pidp10` was a byte-identical copy of `pdp10-ka` under the name
-  `bin/pdpcontrol.sh` hardcodes, and `rcornwell/pidp10` was merged into
-  `src/pdp10` at `02cb09a`, so there is one engine, not two.
+  `scansw10`, `pidp10-test`, `binaries-for-X86-64.tar.gz`, `pidp10` and
+  `pidp10.panama` are all untracked now: `pidp10` was a byte-identical copy of
+  `pdp10-ka` under the name the old `pdpcontrol.sh` hardcodes, and
+  `rcornwell/pidp10` was merged into `src/pdp10` at `02cb09a`, so there is one
+  engine, not two. `pidp10.panama` was the panama5-era engine that build
+  displaced on 2024-03-13 (md5-identical to `bin/pidp10` as of `1e81df0^`); its
+  sources are this repository's own history at `569c61a^`, and they add nothing
+  `src/pdp10/PDP10/` does not already have except the pre-`pidp_panel` panel
+  code this branch removed.
 * `PIDP10_HOME=<checkout>` remains a developer shortcut: it is used as a last
-  resort when looking for the engines and the vendored sims, so
+  resort when looking for the engines and for a locally built device sim, so
   `PIDP10_HOME=$PWD install/fedora/libexec/pidp10-engine 1` works with nothing
   installed. It is not a packaging knob.
 
 ## Building the RPM
 
 ```sh
-packaging/build-rpm.sh                       # clean tarball, no binary blobs
-packaging/build-rpm.sh --with-vendored       # also builds pidp10-vendored
+make rpm                                     # RPMs + SRPM into ./dist-rpm
+make rpmlint                                 # build them first, then lint
+make rpmlint WORKTREE=yes                    # ... from the tree as it stands
+
+packaging/build-rpm.sh                       # snapshot RPMs from HEAD
 packaging/build-rpm.sh --worktree            # package the tree as it stands
+packaging/build-rpm.sh --srpm-only           # just the SRPM (what COPR runs)
 ```
 
-By default the tarballs are `git archive` of HEAD: what ships is what is
+The layout: `dist/` holds `Source0`/`Source1`, `dist-rpm/` holds nothing but
+the finished RPMs (`_sourcedir`/`_rpmdir`/`_srcrpmdir` overrides,
+`_rpmfilename` without the arch subdirectory), and the rpmbuild scratch stays
+in `~/rpmbuild` - this tree gets no `BUILD/` or `SOURCES/` of its own.
+
+By default the tarball is `git archive` of HEAD: what ships is what is
 committed, the only state of the project anyone else can rebuild. A dirty work
 tree is warned about rather than silently packaged; `--worktree` says explicitly
 that you want the uncommitted version (it uses `git ls-files`, so `.gitignore`
-still decides what is in - `build/` and `rpmbuild/` are not).
+still decides what is in - `build/`, `dist/` and `dist-rpm/` are not).
 
-`Source0` never contains `bin/`. The 46 MB of prebuilt AI Lab peripherals -
-ELF with no source in this tree - come in `Source2` and are unpacked only for
-`--with vendored`, so the tarball a distribution verifies against a checksum
-contains no unreviewed blob.
+`Source0` is the tree, and that is the whole story: nothing prebuilt is
+packaged, so there is no second tarball of ELFs, no `--with` switch to opt into
+shipping someone's binary, and no architecture special case to keep it honest.
+The device sims the cabinet wants are packages of their own (below), built by
+whoever maintains them.
 
 The `Release:` is `1.<gitdate>git<gitrev>` so a rebuilt snapshot upgrades
 cleanly and is attributable.
 
 Subpackages: `pidp10` (engines, helpers, units, config), `pidp10-panel`
 (pinctrl, pidp-gpio-probe, pidp10-test, the `/dev/gpiochip*` udev rule),
-`pidp10-ui` (fonts, icons, `.desktop` files, tilix layout), `pidp10-vendored`
-(the ELF-only peripherals in `%{_libdir}/pidp10/bin`). `pidp10` Recommends
+`pidp10-ui` (fonts, icons, `.desktop` files, tilix layout). `pidp10` Recommends
 `pidp10-panel`, because the engine unit asks the probe whether a cabinet is
 attached; both helpers degrade without it.
 
-Two switches:
+One switch:
 
-* `--with vendored` installs `bin/`'s prebuilt ELFs into `pidp10-vendored`
-  (`cbridge`, `tv11`, `tvcon`, `imlac`, `vt05/50/52`, ...). Off by default, so a
-  build that forbids binary blobs still produces a working simulator (you lose
-  cbridge/tv11/the exotic terminals), and **also off on any architecture but
-  aarch64**: what upstream publishes there is aarch64 ELF, so `rpmbuild
-  --with vendored` on x86-64 says so in `%build` and packages nothing rather
-  than installing binaries that cannot execute. `Source2` is declared only when
-  it will be used, so an SRPM built without vendored carries no blob at all.
-
-  Most of that set does have an upstream and should be built from it instead -
-  `aap/vt05` (vt05 vt50 vt52 dp3300 dm2500 gecon, MIT), `aap/pdp11` (tv11
-  tvcon), `rricharz/Tek4010` (GPL-3.0), `bictorv/chaosnet-bridge` (Apache-2.0),
-  `PDP-10/supdup`, `Chaosnet/chaosnet-tools` (gw mlftp shutdown gateway.sh),
-  `aap/pdp6` (mkpty33) and `jdersch/sImlac` (imlac). Each belongs in its own
-  repo and spec, because they are DEC/Datapoint/IMLAC emulators that other PDP
-  projects use too; `install.sh` already fetches most of them as `PDP-10/its`
-  submodules.
 * `--with kiosk_default` flips the systemd presets to enable the cabinet
   service at install, for a machine whose only purpose is blinkenlights.
   Off by default: a package that starts a PDP-10 on someone's laptop unasked
@@ -151,6 +157,44 @@ instead of setuid/setcap; RT priority comes from
 Boot numbers are the octal switch-register values (`0200` = TOPS-20), and
 `systems/selections` maps them to a system directory.
 
+## The device sims
+
+The boot scripts and two units call programs this package does not build and
+must not ship: `cbridge` (Chaosnet over UDP), `tv11`/`tvcon` (Knight TV), the
+`vt05`/`vt50`/`vt52`/`dp3300`/`dm2500`/`gecon` terminals, `tek4010`, `imlac`,
+`supdup`, and the Chaosnet `gw`/`mlftp`/`shutdown`/`gateway.sh`. They were
+committed here as aarch64 ELFs with no source, which meant a distribution build
+either shipped unreviewed binaries or lost the cabinet; both are worse than
+saying they are someone else's programs.
+
+They are looked up on `PATH`, and the units that need one gate on it
+(`ConditionPathExists=/usr/bin/cbridge`), so an absent sim means a skipped unit
+rather than a failed service, and `pdp` says which package to install. The
+spec names them as `Suggests:` (`vt05`, `tek4010`, `imlac`, `tv11`, `tvcon`,
+`cbridge`) so `dnf` offers them when it offers this package - suggested, not
+required, because a headless box or a Teletype-only cabinet needs none of them
+and an unresolvable suggestion is silently skipped by dnf, which is what lets
+`imlac`/`tvcon`/`cbridge` be named before their specs join the COPR. Each
+belongs in its own repo and spec - they are DEC, Datapoint and IMLAC emulators
+that other PDP projects use too, and they have licenses of their own:
+
+| programs | upstream | licence |
+|---|---|---|
+| `vt05 vt50 vt52 dp3300 dm2500 gecon` | `aap/vt05` | MIT |
+| `tv11 tvcon` | `aap/pdp11` | BSD-2 |
+| `tek4010` | `rricharz/Tek4010` | GPL-3.0 |
+| `cbridge` | `bictorv/chaosnet-bridge` | Apache-2.0 |
+| `supdup` | `PDP-10/supdup` | to confirm |
+| `gw mlftp shutdown gateway.sh` | `Chaosnet/chaosnet-tools` | to confirm |
+| `mkpty33` | `aap/pdp6` (`tools/mkpty33.c`) | MIT |
+| `imlac` | `jdersch/sImlac` | to confirm |
+
+`PDP-10/its`'s `.gitmodules` is the map these came from (`tools/vt05`,
+`tools/tek4010`, `tools/tv11`, `tools/cbridge`, `tools/supdup`, ...), which is
+also how the old `install.sh` fetched them. Until those specs exist, build one
+from its upstream and drop the binary in `bin/` (ignored, found via
+`PIDP10_BIN`/`PIDP10_HOME`) - that is what `bin/` is for now.
+
 ## COPR
 
 `.copr/Makefile` implements the `make srpm` step that COPR's "build from git"
@@ -163,16 +207,16 @@ local build cannot reproduce.
 copr-cli create pdp10 --chroot fedora-45-aarch64 --chroot fedora-45-x86_64 \
     --scm-type git --scm-metadata https://github.com/<you>/pidp10
 copr-cli build pdp10 --nowait                      # the clean build
-copr-cli build pdp10 --nowait --with vendored      # cabinet extras, aarch64 only
 dnf install -y dnf-plugins-core && dnf copr enable <you>/pdp10 && dnf install pidp10
 ```
 
 Enable aarch64 *and* x86-64: the engines are architecture-neutral (everything
-is compiled, `%check` boots all five), and the x86-64 chroot is what keeps the
-vendored arch guard honest. Multi-spec projects (`:multi-spec: yes`) are the
+is compiled, `%check` boots all five), and the x86-64 chroot is what catches
+architecture assumptions early. Multi-spec projects (`:multi-spec: yes`) are the
 next step once the terminal packages have specs of their own - one project so
-`pidp10`'s `Recommends: vt05 tek4010 imlac` resolve in the repo the user just
-enabled, separate SRPMs so each keeps its own version and licence.
+the `Suggests:` above (`vt05 tek4010 imlac tv11 tvcon cbridge`) resolve in the
+repo the user just enabled, separate SRPMs so each keeps its own version and
+licence.
 
 ## Debian
 
@@ -205,8 +249,21 @@ including a laptop whose eleven gpiochips are PMIC power rails.
 Package-level checks used while developing this:
 
 ```sh
-packaging/build-rpm.sh --worktree --with-vendored /tmp/rpb
-rpmlint /tmp/rpb/RPMS/*/*.rpm            # only spelling-of-domain-terms left
-systemd-analyze verify /tmp/rpb/BUILD/.../BUILDROOT/usr/lib/systemd/system/*
+make rpmlint WORKTREE=yes RPM_DIR=/tmp/rpb  # clean; exceptions live in packaging/rpmlint.toml
+systemd-analyze verify ~/rpmbuild/BUILD/pidp10-*/BUILDROOT/usr/lib/systemd/system/*
 udevadm verify install/fedora/udev.d/99-pidp10.rules
 ```
+
+Two checks worth running whenever data or units move, because both failures are
+silent otherwise:
+
+```sh
+rpm -qlp /tmp/rpb/pidp10-*.aarch64.rpm | grep -c 'sounds/.*\.wav'   # 40
+rpm -qlp /tmp/rpb/pidp10-*.aarch64.rpm | grep 'conf/'               # 7 files
+grep -o '"[a-z0-9-]*\.wav"' src/sty33/sounds.c | sort -u | wc -l                 # also 40
+```
+
+The Teletype degrades to silence rather than an error when its samples are
+missing, and `pidp10-cbridge.service` / `pidp10-tv11.service` are skipped by
+their `ConditionPathExists=` when the device sims are not installed - which is
+the intended behaviour, but only if it is deliberate.

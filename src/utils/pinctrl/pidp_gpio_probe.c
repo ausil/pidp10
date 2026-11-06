@@ -20,6 +20,8 @@
  *   pidp-gpio-probe --check      exit 0 iff the panel would use real hardware
  *   pidp-gpio-probe --backend    print the backend the panel would pick
  *   pidp-gpio-probe --list       list gpiochips and whether our lines are free
+ *                                (informational; always exits 0; opens no chip
+ *                                at all under PIDP10_PANEL=sim)
  *   pidp-gpio-probe --pins       print the panel pin table
  */
 
@@ -168,8 +170,35 @@ int main(int argc, char **argv)
 	const char *mode = (argc > 1) ? argv[1] : "--check";
 	int hw;
 
-	if (!strcmp(mode, "--list"))
-		return pidp_panel_gpiod_list() ? 0 : 1;
+	/* Two things a lister owes the caller.
+	 *
+	 * It is informational: it prints what it can see and succeeds even with
+	 * nothing to see. Whether there *is* a panel is --check's question, and
+	 * that has the exit-code contract the units rely on. A lister that exits
+	 * 1 on an empty list breaks every non-root build: gpiod_chip_open needs
+	 * the group the udev rule grants, which a build root (rpmbuild, mock)
+	 * does not have - %check would fail on the lister instead of testing
+	 * what it means to test.
+	 *
+	 * And it obeys PIDP10_PANEL like every other entry point, including the
+	 * one thing it does not simulate: opening /dev/gpiochip0..63 *is* the
+	 * hardware probe. Under PIDP10_PANEL=sim the operator (or the spec's
+	 * %check) has said there is no panel here, so there is nothing to
+	 * enumerate - on a builder there is no chip to find, and on a developer
+	 * box the chips it would find are the laptop's PMIC power rails, which
+	 * is exactly the thing this tool exists not to touch. */
+	if (!strcmp(mode, "--list")) {
+		const char *want = getenv("PIDP10_PANEL");
+
+		if (want && !strcmp(want, "sim")) {
+			printf("pidp-gpio-probe: PIDP10_PANEL=sim: no chips "
+			       "enumerated (GPIO probing is skipped, not "
+			       "simulated)\n");
+			return 0;
+		}
+		pidp_panel_gpiod_list();
+		return 0;
+	}
 	if (!strcmp(mode, "--pins"))
 		return do_pins();
 	if (!strcmp(mode, "--selftest"))
@@ -190,6 +219,8 @@ int main(int argc, char **argv)
 	        "  --check    exit 0 if the front panel would use real hardware\n"
 	        "  --backend  print the backend the panel would pick\n"
 	        "  --list     list /dev/gpiochipN and whether the panel lines are free\n"
+	        "             (informational; exits 0 even when none are visible;\n"
+	        "             opens no chip at all under PIDP10_PANEL=sim)\n"
 	        "  --pins     print the panel pin table\n"
 	        "  --selftest drive the multiplexing loop on the simulated panel\n"
 	        "             (default 3 seconds; never touches hardware)\n"

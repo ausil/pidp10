@@ -1,0 +1,7 @@
+attach -u tty 12345,connect=localhost:10016;notelnet
+set rom type=stty
+# Absolute for the same reason gt40.simh names its ROM absolutely: the sim's
+# cwd is the boot directory, not $(DATADIR)/conf.
+load -s /usr/share/pidp10/conf/ssv22.iml
+reset
+go

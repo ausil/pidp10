@@ -1,9 +1,9 @@
 [Desktop Entry]
 Name=PDP Control
-Comment=MAnage PDP-10 peripherals
+Comment=Manage PDP-10 peripherals
 Exec=lxterminal -e "pdpcontrol"
 Terminal=true
 Type=Application
-Icon=/opt/pidp10/install/icons/pdp10.svg
+Icon=pdp10
 Categories=X-PDP10;
 StartupNotify=false

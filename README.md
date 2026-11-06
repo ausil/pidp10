@@ -23,6 +23,17 @@ The world inside the PiDP-10 is not just the PDP-10 alone, but the entire MIT AI
 
 ## 1. Quick install & lookaround
 
+> This is the original Raspberry Pi image flow (`/opt/pidp10`, `install/install.sh`).
+> On any current Fedora system, install the RPM instead — build it from this
+> tree with `packaging/build-rpm.sh` (`.copr/Makefile` is what a COPR build
+> runs). Everything (engines, panel tools,
+> terminals) is then compiled from source and laid out per the FHS; see
+> [`packaging/README.md`](packaging/README.md) for the layout, the services
+> and the `Suggests:` device-sim packages the cabinet uses. The flow below
+> predates that work; use it only when rebuilding a PiDP-10 SD card the old
+> way (it `chmod +s`-es binaries and drops everything into `/opt`, which the
+> package exists to stop doing).
+
     cd /opt
     sudo git clone https://github.com/obsolescence/pidp10.git
     /opt/pidp10/install/install.sh

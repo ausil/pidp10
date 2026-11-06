@@ -20,18 +20,29 @@ src/utils/pinctrl/pinctrl
 src/utils/pinctrl/pidp-gpio-probe
 src/utils/pinctrl/scansw10
 src/utils/pinctrl/pidp10-test
-# same story in the vendored bin/ directory: these are what `make` produces, and
-# bin/pidp10 was a byte-identical copy of bin/pdp10-ka kept under the name
-# bin/pdpcontrol.sh:21 hardcodes. bin/pidp10.panama stays tracked for now: its
-# source is unrecorded. It is not in rcornwell/pidp10 either - that is a fork of
-# this repository and carries the same binary - so install.sh's
-# "rm -r .../src/panama5" has never had anything to delete.
-/bin/pdp10-*
-/bin/pdp6
-/bin/pidp10
-/bin/pidp10-test
-/bin/scansw10
-/bin/st
-/bin/sty
-/bin/binaries-for-*.tar.gz
+# Nothing under bin/ is tracked. It is scratch: what `make` dropped there, and
+# whatever prebuilt device sim someone fetched to try out. Installed data lives
+# with what uses it (src/sty33/sounds for the Teletype recordings) or under
+# install/fedora/conf (config this project writes) - never in bin/, which is how
+# the Teletype sounds ended up shipping only in the blob tarball. The device
+# sims themselves (cbridge, tv11, tvcon, imlac, vt05/50/52, dp3300, dm2500,
+# gecon, tek4010, supdup, gw, mlftp, shutdown, mkpty33) are separate programs
+# with their own upstreams; see packaging/README.md. Anything deleted from here
+# is recoverable from the last commit that had it, and the two engines from
+# further back:
+#     git checkout <commit> -- bin/<name>
+#     git checkout 569c61a^ -- src/panama5     # pidp10.panama's sources
+#     git show 1e81df0^:bin/pidp10             # the panama5-era engine
+/bin/
 build/
+# RPM staging and products of make rpm / packaging/build-rpm.sh: dist/ holds
+# the Source0/1, dist-rpm/ nothing but RPMs.
+# Ignored because --worktree packages `git ls-files --others
+# --exclude-standard`: an unignored products dir would put a previous build's
+# RPMs inside the tarball of the next one. The directories are overridable
+# (DIST_DIR/RPM_DIR), so the names are defaults, not guarantees.
+/dist/
+/dist-rpm/
+# Console-session state an engine run writes into the cwd (a machine-local
+# session UUID). Runtime droppings like build/, never package, never commit.
+sess

@@ -26,5 +26,8 @@ set vt keyboard=nospacewar
 dep sr 0
 set rom enabled
 set rom0 address=17766000
-at rom0 bootvt.img
+# The ROM is named absolutely (and /usr/share/pidp10 is rewritten to $(DATADIR)
+# by the Makefile's SUBST) because simh resolves this against its cwd, which is
+# the boot directory under $PIDP10_STATE, not the directory the file lives in.
+at rom0 /usr/share/pidp10/conf/bootvt.img
 boot rom0

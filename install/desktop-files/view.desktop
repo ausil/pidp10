@@ -1,9 +1,9 @@
 [Desktop Entry]
 Name=PDP-10 View
 Comment=Manage PDP-10 peripherals
-Exec=nohup tilix -s /opt/pidp10/install/view.json
+Exec=nohup tilix -s /usr/share/pidp10/view.json
 Terminal=false
 Type=Application
-Icon=/opt/pidp10/install/icons/view.svg
+Icon=view
 Categories=X-PDP10;
 StartupNotify=true

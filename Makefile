@@ -2,6 +2,8 @@
 #
 #   make                    build everything into ./build
 #   make install DESTDIR=/tmp/root PREFIX=/usr
+#   make rpm                RPMs + source RPM into ./dist-rpm
+#   make rpmlint            build the RPMs, then check them with rpmlint
 #
 # Builds are out of tree (into $(BUILDDIR)); the binaries tracked in the
 # repository are never touched, and "make install" refuses to run on an empty
@@ -20,7 +22,6 @@ PREFIX        ?= /usr
 BINDIR        ?= $(PREFIX)/bin
 LIBEXECDIR    ?= $(PREFIX)/libexec/pidp10
 DATADIR       ?= $(PREFIX)/share/pidp10
-VENDORBINDIR  ?= $(PREFIX)/lib/pidp10/bin
 SYSCONFDIR    ?= /etc
 UNITDIR       ?= $(PREFIX)/lib/systemd/system
 USERUNITDIR   ?= $(PREFIX)/lib/systemd/user
@@ -33,16 +34,14 @@ LOGINDDIR     ?= $(PREFIX)/lib/systemd/logind.conf.d
 FIREWALLDIR   ?= $(PREFIX)/lib/firewalld/services
 ICONSDIR      ?= $(PREFIX)/share/icons/hicolor
 APPSDIR       ?= $(PREFIX)/share/applications
+MANDIR        ?= $(PREFIX)/share/man
 FONTSDBIR     ?= $(PREFIX)/share/fonts/pidp10
 COMPLETIONDIR ?= $(PREFIX)/share/bash-completion/completions
 STATEDIR      ?= /var/lib/pidp10
 
 BUILDDIR      ?= build
-# WITH_STY=no skips the two X11/SDL terminals; WITH_VENDORED=yes installs the
-# device sims that have no source in this tree (they go to their own subpackage
-# precisely so a build that forbids binary blobs can leave them out).
+# WITH_STY=no skips the two X11/SDL terminals (sty/st need SDL2 and X11).
 WITH_STY      ?= yes
-WITH_VENDORED ?= no
 
 CC      ?= gcc
 CFLAGS  ?= -O2 -g
@@ -54,22 +53,12 @@ PINCTRLD := src/utils/pinctrl
 # probe the engine unit asks, and the two cabinet tools.
 PANEL_BINS     := pinctrl pidp-gpio-probe scansw10 pidp10-test
 ENGINES        := pdp10-ka pdp10-ki pdp10-kl pdp10-ks pdp6
-# Prebuilt device sims: ELF with no source in this tree. Most of these do have
-# an upstream (vt05 vt50 vt52 dp3300 dm2500 gecon <- aap/vt05, tek4010 <-
-# rricharz/Tek4010, tv11 tvcon <- aap/pdp11, cbridge <- bictorv/chaosnet-bridge,
-# supdup <- PDP-10/supdup, gw mlftp shutdown gateway.sh <-
-# Chaosnet/chaosnet-tools, mkpty33 <- aap/pdp6 tools/mkpty33.c) and should be
-# built from there rather than installed from here; that is a separate spec per
-# program, not a job for this makefile.  `pidp10` is not listed: it was a copy
-# of the engine under another name.  `pidp10.panama` is listed because its
-# source is nowhere to be found: not in this tree, and not in rcornwell/pidp10
-# either, which is a fork of *this* repository and so carries the same committed
-# binary rather than the sources - install.sh's "rm -r .../src/panama5" has
-# never matched a file. Its strings (SDL, pcre, zlib, DHCP, "CR: card empty")
-# put it in the PanamaX family, so it is an engine built with that peripheral
-# set compiled in; until someone produces the source it is an orphan blob.
-VENDORED     := cbridge dm2500 dp3300 gecon gw imlac mkpty33 mlftp shutdown \
-                supdup tek4010 tv11 tvcon vt05 vt50 vt52 pidp10.panama
+# The device simulators that used to be installed from bin/ (cbridge, tv11,
+# tvcon, imlac, vt05/50/52, dp3300, dm2500, gecon, tek4010, supdup, gw, mlftp,
+# shutdown, mkpty33) are not built or installed here. They have upstreams and
+# belong in their own packages on PATH - the spec names them as Suggests - so
+# nothing under bin/ is tracked and nothing is installed from it; the data the
+# helpers read lives in src/sty33/sounds and install/fedora/conf.
 
 # Rewrite the install locations baked into the units, the helpers and the
 # front-ends. They are written with /usr paths so the tree is readable and
@@ -81,8 +70,7 @@ SUBST = sed -e 's|/usr/libexec/pidp10|$(LIBEXECDIR)|g' \
             -e 's|$(PREFIX)/share/pidp10|$(DATADIR)|g' \
             -e 's|/usr/share/pidp10|$(DATADIR)|g' \
             -e 's|/var/lib/pidp10|$(STATEDIR)|g' \
-            -e 's|/etc/pidp10|$(SYSCONFDIR)/pidp10|g' \
-            -e 's|/usr/lib/pidp10/bin|$(VENDORBINDIR)|g'
+            -e 's|/etc/pidp10|$(SYSCONFDIR)/pidp10|g'
 
 # simh's makefile assembles its own compile line: ${GCC} is the compiler,
 # CFLAGS_O the optimisation block and LDFLAGS the link line. WARNINGS=ALLOWED
@@ -194,9 +182,17 @@ install:
 	        install -m 0644 $$f $(DESTDIR)$(DATADIR)/systems/$$n/$$(basename $$f); \
 	    done; done
 	install -m 0644 systems/selections $(DESTDIR)$(DATADIR)/systems/
+	@# data the helpers and the terminals read at run time. Installed unguarded:
+	@# a missing file has to fail the build rather than leave a cabinet without
+	@# its Teletype sounds or its Chaosnet config. These live with what uses them
+	@# (the Teletype recordings are part of sty33's sources) or under
+	@# install/fedora (config this project writes); nothing is installed from
+	@# bin/, which holds no tracked files.
 	for c in cbridge.conf chaos-hosts init.ini gt40.simh imlac.simh ssv22.iml; do \
-	    [ -f bin/$$c ] && install -m 0644 bin/$$c $(DESTDIR)$(DATADIR)/conf/$$c; done
-	install -m 0644 bin/sounds/*.wav $(DESTDIR)$(DATADIR)/sounds/
+	    $(SUBST) install/fedora/conf/$$c > $(DESTDIR)$(DATADIR)/conf/$$c; done
+	chmod 0644 $(DESTDIR)$(DATADIR)/conf/*
+	install -m 0644 install/fedora/conf/bootvt.img $(DESTDIR)$(DATADIR)/conf/
+	install -m 0644 src/sty33/sounds/*.wav $(DESTDIR)$(DATADIR)/sounds/
 	@# configuration, units and OS integration
 	$(SUBST) install/fedora/etc/pidp10.conf > $(DESTDIR)$(SYSCONFDIR)/pidp10/pidp10.conf
 	chmod 0644 $(DESTDIR)$(SYSCONFDIR)/pidp10/pidp10.conf
@@ -219,23 +215,35 @@ install:
 	install -m 0644 install/fedora/udev.d/99-pidp10.rules $(DESTDIR)$(UDEVDIR)/
 	install -m 0644 install/fedora/systemd/logind.conf.d/60-pidp10-rt.conf $(DESTDIR)$(LOGINDDIR)/
 	install -m 0644 install/fedora/firewalld/pidp10.xml $(DESTDIR)$(FIREWALLDIR)/
-	@# desktop integration
+	@# desktop integration, with the paths rewritten: the entries carry
+	@# /usr/share paths in the tree (so they read correctly on a checkout)
+	@# and desktop-file-validate in %check only parses them - a stale /opt
+	@# or a wrong DATADIR in Exec= is silently dead at the desktop, not at
+	@# the build. Icon= stays a bare name so the hicolor lookup resolves.
 	for d in install/desktop-files/*.desktop; do \
-	    install -m 0644 $$d $(DESTDIR)$(APPSDIR)/$$(basename $$d); done
+	    $(SUBST) $$d > $(DESTDIR)$(APPSDIR)/$$(basename $$d); \
+	    chmod 0644 $(DESTDIR)$(APPSDIR)/$$(basename $$d); done
+	@# The theme names the icon after the file name, so con-48.png must
+	@# land as con.png in 48x48/apps or that layer is invisible. (basename's
+	@# second argument strips only an exact trailing match: strip ".png",
+	@# then "-48", then put ".png" back.)
 	for i in install/icons/*-48.png; do \
-	    [ -f $$i ] && install -m 0644 $$i $(DESTDIR)$(ICONSDIR)/48x48/apps/$$(basename $$i); done
+	    [ -f $$i ] && install -m 0644 $$i \
+	        $(DESTDIR)$(ICONSDIR)/48x48/apps/$$(basename $$i .png | sed 's/-48$$//').png; done
 	for i in install/icons/*.svg; do \
 	    [ -f $$i ] && install -m 0644 $$i $(DESTDIR)$(ICONSDIR)/scalable/apps/$$(basename $$i); done
 	install -m 0644 install/TELETYPE1945-1985.ttf $(DESTDIR)$(FONTSDBIR)/
 	install -m 0644 install/vt52.otf $(DESTDIR)$(FONTSDBIR)/
 	install -m 0644 install/view.json $(DESTDIR)$(DATADIR)/
 	install -m 0644 install/pidp10tilix.conf $(DESTDIR)$(DATADIR)/
-ifeq ($(WITH_VENDORED),yes)
-	install -d $(DESTDIR)$(VENDORBINDIR)
-	for v in $(VENDORED); do \
-	    [ -f bin/$$v ] && install -m 0755 bin/$$v $(DESTDIR)$(VENDORBINDIR)/$$v; done
-	install -m 0755 bin/gateway.sh $(DESTDIR)$(VENDORBINDIR)/gateway.sh
-endif
+	@# man pages for the front doors; no-manual-page-for-binary is
+	@# filtered only for the engines and panel tools, whose interface is
+	@# the units
+	install -Dm 0644 man/pdp.1 $(DESTDIR)$(MANDIR)/man1/pdp.1
+	install -Dm 0644 man/pdpcontrol.1 $(DESTDIR)$(MANDIR)/man1/pdpcontrol.1
+	@# st's own upstream page; sty is st with Teletype emulation and no page
+	@# of its own (see the no-manual-page filter).
+	install -Dm 0644 src/st-0.9.2/st.1 $(DESTDIR)$(MANDIR)/man1/st.1
 ifeq ($(WITH_STY),yes)
 	install -m 0755 $(B)/sty $(DESTDIR)$(BINDIR)/sty
 	install -m 0755 $(B)/st $(DESTDIR)$(BINDIR)/st
@@ -245,6 +253,27 @@ clean:
 	$(MAKE) -C $(PDP10D) clean
 	rm -rf $(B)
 
-.PHONY: clean clean-all
+.PHONY: clean clean-all rpm rpmlint
 clean-all: clean
 	-rm -rf $(PDP10D)/BIN
+
+# packaging/build-rpm.sh stages the sources in dist/ and drops the products
+# flat in $(RPM_DIR): _sourcedir/_rpmdir/_srcrpmdir point there, _rpmfilename
+# keeps the arch subdirectory out of the path, and rpmbuild's scratch stays in
+# ~/rpmbuild - the tree holds no BUILD/ or SOURCES/. make rpmlint builds them
+# first, and exceptions live in packaging/rpmlint.toml with a reason each, not
+# in someone's scrollback. WORKTREE=yes packages the tree as it stands - while
+# work is uncommitted, the default HEAD snapshot lints code you did not write.
+#
+# Lint the RPMs, no bare-spec argument: the sysusers/tmpfiles macros cat
+# Source1 and the tmpfiles fragment at parse time, which only resolves inside
+# a build tree - linting the bare spec manufactures false errors instead of
+# finding real ones. (The SRPM ships its sources, so its embedded spec parses
+# cleanly and lints with the rest.)
+RPM_DIR ?= dist-rpm
+WORKTREE ?=
+rpm:
+	packaging/build-rpm.sh $(if $(filter yes,$(WORKTREE)),--worktree) $(RPM_DIR)
+
+rpmlint: rpm
+	rpmlint -c packaging/rpmlint.toml $(RPM_DIR)/*.rpm

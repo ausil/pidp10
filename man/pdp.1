@@ -1,0 +1,114 @@
+.Dd November 5, 2026
+.Dt PDP 1
+.Os
+.Sh NAME
+.Nm pdp
+.Nd open the PDP-10 console and the AI Lab terminal simulators
+.Sh SYNOPSIS
+.Nm
+.Ar command
+.Op Ar args ...
+.Sh DESCRIPTION
+.Nm
+is the operator front door for the PiDP-10: it opens the simh console and
+the peripheral simulators the boot scripts expect to find on
+.Em PATH ,
+each inside a terminal emulator so it gets a real TTY.
+The engine itself is controlled by
+.Xr pdpcontrol 1 ;
+.Nm
+starts no PDP-10.
+.Pp
+Peripheral programs are resolved first from
+.Em PATH
+(where the
+.Nm pidp10
+package and the device-sim packages install them), then from
+.Ev PIDP10_BIN ,
+then from a development checkout under
+.Ev PIDP10_HOME .
+A missing device sim names the package to install rather than failing
+mysteriously.
+.Pp
+The commands:
+.Bl -tag -width Ds
+.It Ic view
+Open the browser front panel (simh's own telnet view, port 10001) via
+.Ev BROWSER
+or
+.Xr xdg-open 1 .
+.It Ic con
+The Teletype Model 33: the bundled
+.Xr sty 1
+terminal attached to the console port.
+.It Ic telcon | console
+Plain telnet to the console port in an xterm.
+.It Ic vt52 | vt05
+DEC VT52 / VT05 emulators (from the
+.Nm vt05
+package) on the console port.
+.It Ic tvcon
+Knight TV terminal (from the same package as
+.Nm tv11 )
+on the TV Typer port.
+.It Ic tek | tek4010
+Tektronix 4010 storage tube (from the
+.Nm tek4010
+package).
+.It Ic imlac
+IMLAC PDP-5 display (from the
+.Nm imlac
+package).
+.It Ic dp3300 | dp3300-ascii
+Datapoint DP-3300 / DECwriter II.
+.It Ic type340 | sty
+ADSEC Type 340 console (the bundled
+.Xr sty 1 )
+on the console port.
+.It Ic gt40 | pictor
+GT-40 / Pictor 501 display (the DP-3300 in
+.Fl t
+.Ar gt40
+mode).
+.It Ic pdp6 | pdp6-tty | tv11-tty
+Not offered by
+.Nm :
+these belong to the PDP-6 side of the cabinet; start them with
+.Ic pdpcontrol start
+using a boot number from
+.Pa /usr/share/pidp10/systems/selections .
+.El
+.Sh ENVIRONMENT
+.Bl -tag -width Ds
+.It Ev PIDP10_CONSOLE_PORT
+Console telnet port (default 1025; policy lives in
+.Pa /etc/pidp10/pidp10.conf ) .
+.It Ev PIDP10_TV11_PORT
+TV Typer port for
+.Ic tvcon .
+.It Ev PIDP10_TERMINAL
+Terminal emulator to launch commands in; without it, tilix, gnome-terminal,
+xfce4-terminal and xterm are tried in that order.
+.It Ev PIDP10_BIN , PIDP10_HOME
+Locations searched for locally built device sims.
+.El
+.Sh EXIT STATUS
+.Ex -std
+is 1 when a peripheral program cannot be found, and 2 on a bad command line.
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic pdp con
+Type on the Teletype.
+.It Ic pdp vt52
+Attach a VT52 to the console.
+.It Ic PIDP10_TERMINAL=alacritty pdp tvcon
+Watch Mazewar in another emulator.
+.El
+.Sh SEE ALSO
+.Xr pdpcontrol 1 ,
+.Xr sty 1 ,
+.Xr systemctl 1 ,
+.Pa /usr/share/doc/pidp10/README.md
+(the packaging guide, whose
+.Dq The device sims
+table names the upstream package of every peripheral).

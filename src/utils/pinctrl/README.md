@@ -75,7 +75,9 @@ plus `pidp-gpio-probe` when libgpiod >= 2.0 is installed).
 * `pidp-gpio-probe --check`    exit 0 iff the panel would use real hardware
 * `pidp-gpio-probe --backend`  print the backend that would be picked
 * `pidp-gpio-probe --list`     every gpiochip, its label, and whether the 22
-                               panel lines are free
+                               panel lines are free (opens no chip at all under
+                               `PIDP10_PANEL=sim` — the declaration wins; a
+                               build root must not be probing hardware)
 * `pidp-gpio-probe --pins`     the panel pin table
 * `pidp-gpio-probe --selftest` drive the multiplexing loop on the simulated
                                panel and report the real frames/s

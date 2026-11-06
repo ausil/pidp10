@@ -1,18 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  /usr/lib/firewalld/services/pidp10.xml
+  Installed as /usr/lib/firewalld/services/pidp10.xml; copy it to
+  /etc/firewalld/services/ only to override it.
 
   Inbound ports the PiDP-10 farm listens on. Everything the simulators expose
   is a TCP telnet-style line (simh TMXR) or a UDP Chaosnet tunnel; without
-  this, other machines running `rpdp tvcon` / `rpdp vt52` just hang, which is
+  this, other machines running "rpdp tvcon" or "rpdp vt52" just hang, which is
   the single most common "it worked on Raspbian" complaint.
 
   Sources of these numbers: systems/*/boot.pidp (set cons/at -u line=..),
-  bin/cbridge.conf (chudp 44041) and bin/gateway.sh (44042/3150).
+  cbridge.conf in /usr/share/pidp10/conf (chudp 44041) and gateway.sh from
+  Chaosnet/chaosnet-tools (44042/3150).
 
-    install -D -m 0644 firewalld/pidp10.xml /etc/firewalld/services/pidp10.xml
-    firewall-cmd --reload
-    firewall-cmd --permanent --add-service=pidp10 && firewall-cmd --reload
+  To enable: install the file, reload firewalld, and add "pidp10" to the
+  default zone permanently. The firewall-cmd invocations are described rather
+  than quoted because an XML comment may not contain a run of two hyphens -
+  quoting them made this whole file unparseable and firewalld skipped the
+  service without saying so.
 -->
 <service>
   <short>PiDP-10 emulator farm</short>
