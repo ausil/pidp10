@@ -52,20 +52,21 @@
 #   rpmbuild -bb --with kiosk_default packaging/pidp10.spec
 #       (the product build: presets enable the cabinet so it boots out of the box)
 
-# Snapshot identification, passed by packaging/build-rpm.sh. Upstream has no
-# releases, so a rebuilt tree has to upgrade cleanly and be attributable.
-%{!?gitrev:  %global gitrev  unknown}
-%{!?gitdate: %global gitdate 00000000}
-
 %global srcname pidp10
 %global appname PiDP-10
 %global simh_version 4.1.0
+# Snapshot segment of the Release: bump srcdate when a release is cut so a
+# rebuilt tree upgrades. The upstream commit a snapshot carries is recorded in
+# %%changelog - nothing here is derived from git, which would be stale the
+# moment it was committed and would leave a bare rpmbuild -bs looking for a
+# tarball name nobody produced.
+%global srcdate 20261106
 
 %bcond_with     kiosk_default
 
 Name:           %{srcname}
 Version:        %{simh_version}
-Release:        1.%{gitdate}git%{gitrev}%{?dist}
+Release:        1.%{srcdate}%{?dist}
 Summary:        PDP-10 simulator, front-panel emulation and AI Lab peripherals
 
 # simh is the MIT-like "Historical Permission Notice"; st/sty33 are MIT;
@@ -80,16 +81,13 @@ URL:            https://obsolescence.dev/pdp10
 # packaging/build-rpm.sh makes both tarballs with `git archive` (committed state
 # plus uncommitted changes to tracked files). Nothing under bin/ is in it: the
 # tree's prebuilt ELFs are not built or installed by this spec at all.
-Source0:        %{srcname}-%{version}.tar.gz
+Source0:        %{srcname}-%{version}-%{srcdate}.tar.gz
 # Same content as install/fedora/sysusers.d/30-pidp10.conf, shipped separately
 # because %%sysusers_create_package has to read it in %%pre, before the files it
 # describes have been unpacked.
 Source1:        30-pidp10.conf
-# Same content as install/fedora/tmpfiles.d/pidp10.conf, shipped separately for
-# the same reason: %%tmpfiles_create_package cats %%{SOURCE2} when the spec is
-# *parsed*, into the scriptlet's stdin - a path inside the buildroot would not
-# exist yet then, and the generated scriptlet would silently carry an empty
-# config (the scriptlet ends in "|| :" - nothing fails, nothing is created).
+# Same content as install/fedora/tmpfiles.d/pidp10.conf; staged like Source1
+# because %%tmpfiles_create_package cats %%{SOURCE2} at spec-parse time.
 Source2:        pidp10.conf
 
 BuildRequires:  gcc, gcc-c++, make, cmake, pkgconf-pkg-config

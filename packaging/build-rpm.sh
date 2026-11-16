@@ -45,9 +45,6 @@ version=$(sed -n 's/^%global simh_version \([0-9.]*\).*/\1/p' "$here/pidp10.spec
 name=pidp10
 topdir_prefix=$name-$version
 
-rev=$(git rev-parse --short HEAD)
-date=$(git show -s --format=%cd --date=format:%Y%m%d HEAD)
-
 # make_tarball DEST PREFIX PATHSPEC...
 #   PREFIX "" means the archive holds bare relative paths (%prep unpacks those
 #   into an existing directory rather than creating a source directory).
@@ -92,21 +89,29 @@ fi
 dist=${DIST_DIR:-$root/dist}
 mkdir -p "$top" "$dist"
 
-# Source0: the tree. The prefix must match %{name}-%{version} or %autosetup -n
-# fails.
-make_tarball "$dist/$topdir_prefix.tar.gz" "$topdir_prefix" .
-
+# Source1/2: staged copies of the two systemd fragments. The create_package
+# macros cat them at spec-parse time - %(cat %SOURCE) runs before %prep, let
+# alone %install, so only a file already in _sourcedir can be read. They are
+# cp'd fresh from install/fedora/ on every build, which is what keeps them
+# from drifting from the copies %install ships from the tarball.
 cp install/fedora/sysusers.d/30-pidp10.conf "$dist/30-pidp10.conf"
-# Source2 for the same reason as Source1: the tmpfiles scriptlet is generated
-# at spec-parse time, and %(cat %SOURCE2) has to find the file before %install
-# puts anything anywhere.
 cp install/fedora/tmpfiles.d/pidp10.conf "$dist/pidp10.conf"
+
+# Source0: the tree, under the name the spec asks for - rpmspec -P reads it
+# (with _sourcedir already holding the staged Sources, so the parse-time cats
+# stay quiet) rather than this script inventing one, so the two cannot drift
+# and a bare rpmbuild -bs wants exactly what make_tarball produces. The
+# archive prefix stays %{name}-%{version}, which is what %autosetup -n digs
+# out of the tarball.
+tarball=$(rpmspec -P --define "_sourcedir $dist" "$here/pidp10.spec" |
+          sed -n 's/^Source0:[[:space:]]*//p' | head -1)
+[ -n "$tarball" ] || { echo "build-rpm: cannot read Source0 from the spec" >&2; exit 1; }
+make_tarball "$dist/$tarball" "$topdir_prefix" .
 
 rpmbuild -b$([ "$srpm_only" = 1 ] && echo s || echo a) \
     --define "_sourcedir $dist" \
     --define "_rpmdir $top" --define "_srcrpmdir $top" \
     --define "_rpmfilename %%{NAME}-%%{VERSION}-%%{RELEASE}.%%{ARCH}.rpm" \
-    --define "gitrev $rev" --define "gitdate $date" \
     "$here/pidp10.spec"
 
 if [ "$srpm_only" = 1 ]; then

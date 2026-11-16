@@ -120,8 +120,14 @@ shipping someone's binary, and no architecture special case to keep it honest.
 The device sims the cabinet wants are packages of their own (below), built by
 whoever maintains them.
 
-The `Release:` is `1.<gitdate>git<gitrev>` so a rebuilt snapshot upgrades
-cleanly and is attributable.
+Nothing in the NVR is derived from git. `%global srcdate` in the spec is the
+snapshot segment (`Release: 1.%{srcdate}%{?dist}`), bumped when a release is
+cut, and the upstream commit a build snapshots is recorded in `%changelog`.
+A git-derived version is stale the moment it is committed, and a bare
+`rpmbuild -bs` would go looking for a tarball name nobody produced — so
+`packaging/build-rpm.sh` reads the `Source0` name from the spec
+(`rpmspec -P`) instead of inventing one, and passes no `--define` that the
+spec cannot resolve by itself.
 
 Subpackages: `pidp10` (engines, helpers, units, config), `pidp10-panel`
 (pinctrl, pidp-gpio-probe, pidp10-test, the `/dev/gpiochip*` udev rule),

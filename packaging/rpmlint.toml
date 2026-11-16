@@ -55,7 +55,7 @@ Filters = [
     # so no spec change removes the second one. See the spec header.
     '.*useless-provides group\(pidp10\).*',
 
-    # Release carries the snapshot identity (gitdate/gitrev) that a
+    # Release carries the snapshot segment (srcdate) that a
     # hand-written changelog entry cannot know; the version matches. The
     # alternatives are %autochangelog (hides the curated entries) or
     # editing the changelog on every build.

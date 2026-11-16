@@ -1,6 +1,7 @@
 # COPR "build from git" runs `make srpm` in this file. It is a one-line adapter
 # rather than a second packaging implementation: the snapshot identity
-# (gitrev/gitdate in Release:) and the blob-free Source0 (nothing prebuilt; the
+# (the srcdate segment of Release:, bumped at release cut in the spec) and the
+# blob-free Source0 (nothing prebuilt; the
 # device sims are Suggests on their own packages) both live in
 # packaging/build-rpm.sh, and duplicating them here is how a COPR build ends
 # up shipping something a local build cannot reproduce.
