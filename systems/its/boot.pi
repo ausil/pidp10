@@ -66,7 +66,7 @@ at -u mty line=6,10015 speed=9600
 set ten11 enabled
 at -u ten11 10011
 set auxcpu enabled
-at auxcpu 10006
+at -u auxcpu 10006
 set imp enabled
 set imp mac=e2:6c:84:1d:34:a3
 #---------------------------

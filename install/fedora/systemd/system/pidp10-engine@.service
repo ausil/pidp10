@@ -85,8 +85,12 @@ ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
 # simh writes its disk images, tapes and logs inside the state tree; screen
-# keeps its console log in /var/log.
-ReadWritePaths=/var/lib/pidp10 /var/log/pidp10
+# keeps its console log in /var/log. /tmp because ProtectSystem=strict makes it
+# read-only too (PrivateTmp=no above only shares it): cbridge's
+# /tmp/chaos_stream lives there, and SDL's PulseAudio client, with no
+# XDG_RUNTIME_DIR for a system user, makes its directory there ("Failed to
+# create random directory /tmp/pulse-...: Read-only file system").
+ReadWritePaths=/var/lib/pidp10 /var/log/pidp10 /tmp
 # The screen sockets: a private SCREENDIR, not the shared /run/screen. screen
 # without its setgid bit (which NoNewPrivileges= and the sandboxing options
 # that imply it strip) refuses /run/screen unless it is mode 777; a SCREENDIR

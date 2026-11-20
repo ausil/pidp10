@@ -173,6 +173,10 @@ statedir=$PIDP10_STATE
 # 5. tell the boot scripts that cbridge/tv11 are supervised elsewhere
 # ---------------------------------------------------------------------------
 export PIDP10_MANAGED=1
+# The boot scripts call pidp10-spawn by bare name ("!pidp10-spawn tv11 ...").
+# It lives in libexec, which is not on anyone's PATH: without this simh's
+# shell said "pidp10-spawn: command not found" (Error 32512) for each one.
+export PATH="$PIDP10_LIBEXEC:$PATH"
 export PIDP10_CONSOLE_PORT PIDP10_PANEL PIDP10_GPIO_CHIP PIDP10_CONF_DATA
 
 # The engine itself: from PATH on a packaged system, from the checkout when
@@ -193,11 +197,23 @@ pidp_path=$(command -v "$pidp_bin" || true)
 # "xhost +SI:localuser:pidp10". With no X server socket at all (a headless
 # cabinet), use SDL's dummy driver so simh never blocks or fails on a display.
 : "${PIDP10_DISPLAY=:0}"
-xsock=/tmp/.X11-unix/X${PIDP10_DISPLAY#:}
-xsock=${xsock%%.*}
-if [ -n "$PIDP10_DISPLAY" ] && [ -S "$xsock" ]; then
+# The display number alone: ":1.0" -> 1. Strip the screen number from the
+# DISPLAY value, not from the socket path - that has a dot of its own
+# (/tmp/.X11-unix), and cutting there tested "/tmp/" and found no display ever.
+dnum=${PIDP10_DISPLAY#*:}
+dnum=${dnum%%.*}
+xsock=/tmp/.X11-unix/X$dnum
+# "host:N" is a TCP display with no local socket to look for; trust it.
+if [ -n "$PIDP10_DISPLAY" ] && { [ -n "${PIDP10_DISPLAY%%:*}" ] || [ -S "$xsock" ]; }; then
 	export DISPLAY=$PIDP10_DISPLAY
 	export SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-x11}
+	# No sound. Opening the display window also opens SDL audio (for the
+	# beep), and the pidp10 system user has no XDG_RUNTIME_DIR and no session
+	# sound server to reach: SDL tries PulseAudio/PipeWire and waits for them
+	# to time out. simh gives the video thread 2 seconds to come up, and when
+	# it misses that, "set dpy ena" deadlocks (vid_create_window gives up
+	# without telling the thread, then vid_close_window joins it forever).
+	export SDL_AUDIODRIVER=${SDL_AUDIODRIVER:-dummy}
 	display_msg="display=$DISPLAY"
 else
 	unset DISPLAY
