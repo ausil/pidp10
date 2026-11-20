@@ -544,6 +544,13 @@ void *blink(void *ptr)
 
 volatile int    input_wait;
 static char  *input_buffer = NULL;
+/* Set once stdin has reported end of file. Under a service manager stdin can
+ * be /dev/null: it is then always "readable", every read is EOF, and readline
+ * redraws the prompt on each one - the engine printed "sim>" into the journal
+ * hundreds of times a second and could never be continued from stdin anyway.
+ * After EOF, vm_read() stops reading stdin and serves the panel switches only.
+ */
+static int    stdin_eof = 0;
 
 /*
  * Handler for EditLine package when line is complete.
@@ -551,7 +558,11 @@ static char  *input_buffer = NULL;
 static void
 read_line_handler(char *line)
 {
-    if (line != NULL) {
+    if (line == NULL) {             /* EOF on stdin */
+       stdin_eof = 1;
+       return;
+    }
+    {
        input_buffer = line;
        input_wait = 0;
 #if PANEL_USE_CALLBACK_EDIT
@@ -574,8 +585,9 @@ static void
 plain_read_char(int fd)
 {
     char c;
+    ssize_t n;
 
-    while (read(fd, &c, 1) == 1) {
+    while ((n = read(fd, &c, 1)) == 1) {
         if ((c == '\r') || (c == '\n')) {
             char *line = (char *) malloc(plain_len + 1);
 
@@ -602,6 +614,8 @@ plain_read_char(int fd)
             fflush(stdout);
         }
     }
+    if (n == 0)                     /* EOF: stdin is gone for good */
+        stdin_eof = 1;
 }
 #endif /* !PANEL_USE_CALLBACK_EDIT */
 
@@ -615,21 +629,29 @@ vm_read(char *cptr, int32 sz, FILE *file)
     fd_set         read_set;
     int            fd = fileno(file);  /* What to wait on */
     int            col;
+#if PANEL_USE_CALLBACK_EDIT
+    int            rl_installed = 0;
+#endif
 
     if (input_buffer != NULL)
         free(input_buffer);
 #if PANEL_USE_CALLBACK_EDIT
-    rl_callback_handler_install(sim_prompt, (rl_vcpfunc_t*) &read_line_handler);
+    if (!stdin_eof) {
+        rl_callback_handler_install(sim_prompt, (rl_vcpfunc_t*) &read_line_handler);
+        rl_installed = 1;
+    }
 #endif
     input_wait = 1;
     input_buffer = NULL;
     while (input_wait) {
        FD_ZERO(&read_set);
-       FD_SET(fd, &read_set);
+       if (!stdin_eof)
+           FD_SET(fd, &read_set);
        tv.tv_sec = 0;
        tv.tv_usec = 10000;
-       (void)select(fd+1, &read_set, NULL, NULL, &tv);
-       if (FD_ISSET(fd, &read_set)) {
+       /* After EOF the select is only the 10ms pacing for the switch scan. */
+       (void)select(stdin_eof ? 0 : fd+1, &read_set, NULL, NULL, &tv);
+       if (!stdin_eof && FD_ISSET(fd, &read_set)) {
 #if PANEL_USE_CALLBACK_EDIT
            rl_callback_read_char();
 #else
@@ -761,7 +783,8 @@ vm_read(char *cptr, int32 sz, FILE *file)
        }
     }
 #if PANEL_USE_CALLBACK_EDIT
-    rl_callback_handler_remove();
+    if (rl_installed)
+        rl_callback_handler_remove();
 #endif
     return input_buffer;
 }
