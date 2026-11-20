@@ -39,8 +39,28 @@ while [ "${1:-}" = "--worktree" ] || [ "${1:-}" = "--srpm-only" ]; do
 	shift
 done
 top=$(realpath -m "${1:-dist-rpm}")
+dist=${DIST_DIR:-$root/dist}
+mkdir -p "$top" "$dist"
 
-version=$(sed -n 's/^%global simh_version \([0-9.]*\).*/\1/p' "$here/pidp10.spec" | head -1)
+# stage REPO-PATH DEST: copy a packaging input into _sourcedir from the same
+# revision as the tarball - HEAD by default, the work tree with --worktree.
+# The spec and the two systemd fragments used to be read from the work tree
+# even when the tarball was HEAD, so a dirty spec was built against a committed
+# Makefile: an uncommitted %files list met a %install that put things somewhere
+# else, and rpmbuild failed with "File not found" for paths the work tree's
+# Makefile does install.
+stage()
+{
+	if [ "$worktree" = 1 ]; then
+		cp "$1" "$2"
+	else
+		git show "HEAD:$1" > "$2"
+	fi
+}
+spec=$dist/pidp10.spec
+stage packaging/pidp10.spec "$spec"
+
+version=$(sed -n 's/^%global simh_version \([0-9.]*\).*/\1/p' "$spec" | head -1)
 [ -n "$version" ] || { echo "build-rpm: cannot read simh_version from the spec" >&2; exit 1; }
 name=pidp10
 topdir_prefix=$name-$version
@@ -57,7 +77,13 @@ make_tarball()
 		# the stray objects under src/ stay out the same way they do for git.
 		# (tar has no --prefix; --transform with the S flag is what rewrites
 		# the name of a file *and* of what a symlink points at.)
+		# A tracked file deleted in the work tree is still --cached; the
+		# tree as it stands does not have it, so leave it out rather than
+		# have tar fail on it.
 		git ls-files -z --cached --others --exclude-standard -- "$@" |
+		    while IFS= read -r -d '' f; do
+			    { [ -e "$f" ] || [ -L "$f" ]; } && printf '%s\0' "$f"
+		    done |
 		    tar --format=gnu --null ${prefix:+--transform="s|^|$prefix/|S"} -cf - -T - |
 		    gzip > "$dest"
 	else
@@ -86,16 +112,14 @@ fi
 # subpackage - and pidp10-panel, -debuginfo and -debugsource are all written
 # over the same pidp10-...rpm; %% defers it to packaging time, where rpm
 # rebinds NAME per package. Same reason rpm's own macros file spells it %%.
-dist=${DIST_DIR:-$root/dist}
-mkdir -p "$top" "$dist"
-
 # Source1/2: staged copies of the two systemd fragments. The create_package
 # macros cat them at spec-parse time - %(cat %SOURCE) runs before %prep, let
 # alone %install, so only a file already in _sourcedir can be read. They are
 # cp'd fresh from install/fedora/ on every build, which is what keeps them
-# from drifting from the copies %install ships from the tarball.
-cp install/fedora/sysusers.d/30-pidp10.conf "$dist/30-pidp10.conf"
-cp install/fedora/tmpfiles.d/pidp10.conf "$dist/pidp10.conf"
+# from drifting from the copies %install ships from the tarball (stage takes
+# them from the same revision as the tarball).
+stage install/fedora/sysusers.d/30-pidp10.conf "$dist/30-pidp10.conf"
+stage install/fedora/tmpfiles.d/pidp10.conf "$dist/pidp10.conf"
 
 # Source0: the tree, under the name the spec asks for - rpmspec -P reads it
 # (with _sourcedir already holding the staged Sources, so the parse-time cats
@@ -103,7 +127,7 @@ cp install/fedora/tmpfiles.d/pidp10.conf "$dist/pidp10.conf"
 # and a bare rpmbuild -bs wants exactly what make_tarball produces. The
 # archive prefix stays %{name}-%{version}, which is what %autosetup -n digs
 # out of the tarball.
-tarball=$(rpmspec -P --define "_sourcedir $dist" "$here/pidp10.spec" |
+tarball=$(rpmspec -P --define "_sourcedir $dist" "$spec" |
           sed -n 's/^Source0:[[:space:]]*//p' | head -1)
 [ -n "$tarball" ] || { echo "build-rpm: cannot read Source0 from the spec" >&2; exit 1; }
 make_tarball "$dist/$tarball" "$topdir_prefix" .
@@ -112,7 +136,7 @@ rpmbuild -b$([ "$srpm_only" = 1 ] && echo s || echo a) \
     --define "_sourcedir $dist" \
     --define "_rpmdir $top" --define "_srcrpmdir $top" \
     --define "_rpmfilename %%{NAME}-%%{VERSION}-%%{RELEASE}.%%{ARCH}.rpm" \
-    "$here/pidp10.spec"
+    "$spec"
 
 if [ "$srpm_only" = 1 ]; then
 	ls -1 "$top"/*.src.rpm
