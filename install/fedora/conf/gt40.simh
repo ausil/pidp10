@@ -14,7 +14,9 @@ set tti 8b
 set dli enabled
 set dlo enabled
 set dli lines=1
-set dli address=17775610
+# -q: changing an address turns off bus auto-configuration, and simh says so
+# in ten lines of %SIM-INFO. The address is the GT40's real DL11, so it stays.
+set -q dli address=17775610
 set dlo0 8b
 at -u dli 10005,connect=localhost:10019
 set vt enabled
@@ -31,3 +33,6 @@ set rom0 address=17766000
 # the boot directory under $PIDP10_STATE, not the directory the file lives in.
 at rom0 /usr/share/pidp10/conf/bootvt.img
 boot rom0
+# Closing the VT window stops the sim; end it rather than leave a sim> prompt
+# behind in a terminal (and the terminal with it).
+exit
