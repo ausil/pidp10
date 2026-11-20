@@ -77,7 +77,7 @@
 
 Name:           %{srcname}
 Version:        %{simh_version}
-Release:        1.%{srcdate}%{?dist}
+Release:        2.%{srcdate}%{?dist}
 Summary:        PDP-10 simulator, front-panel emulation and AI Lab peripherals
 
 # simh is the MIT-like "Historical Permission Notice"; st/sty33 are MIT;
@@ -353,7 +353,11 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %{_datadir}/%{srcname}/pidp10tilix.conf
 
 %changelog
-* Wed Nov 04 2026 Dennis Gilmore <dennis@ausil.us> - 4.1.0-1
+* Fri Nov 20 2026 Dennis Gilmore <dennis@ausil.us> - 4.1.0-2.20261106
+- split the the bits needed for clients out to a -clients package
+- make sure pdp pdp6 and pdp gt40 work
+
+* Wed Nov 04 2026 Dennis Gilmore <dennis@ausil.us> - 4.1.0-1.20261106
 - %%check boots every engine and runs the panel probe; scriptlets are the
   systemd macros; the runtime-only state dirs are %%ghost while the packaged
   system directories are real files owned by pidp10; no %%config under /usr;
