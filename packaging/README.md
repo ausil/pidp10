@@ -130,6 +130,7 @@ The consequences worth knowing:
 
 ```sh
 make rpm                                     # RPMs + SRPM into ./dist-rpm
+make srpm                                    # just the SRPM into ./dist-rpm (COPR, koji, mock)
 make rpmlint                                 # build them first, then lint
 make rpmlint WORKTREE=yes                    # ... from the tree as it stands
 

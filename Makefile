@@ -294,7 +294,7 @@ clean:
 	$(MAKE) -C $(PDP10D) clean
 	rm -rf $(B)
 
-.PHONY: clean clean-all rpm rpmlint
+.PHONY: clean clean-all rpm srpm rpmlint
 clean-all: clean
 	-rm -rf $(PDP10D)/BIN
 
@@ -315,6 +315,11 @@ RPM_DIR ?= dist-rpm
 WORKTREE ?=
 rpm:
 	packaging/build-rpm.sh $(if $(filter yes,$(WORKTREE)),--worktree) $(RPM_DIR)
+
+# Just the SRPM, for COPR, koji or mock (rpmbuild -bs: no compile). Same
+# sources, same WORKTREE=yes switch, same $(RPM_DIR).
+srpm:
+	packaging/build-rpm.sh --srpm-only $(if $(filter yes,$(WORKTREE)),--worktree) $(RPM_DIR)
 
 rpmlint: rpm
 	rpmlint -c packaging/rpmlint.toml $(RPM_DIR)/*.rpm
