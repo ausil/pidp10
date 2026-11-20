@@ -252,10 +252,12 @@ They are looked up on `PATH`, and the units that need one gate on it
 (`ConditionPathExists=/usr/bin/cbridge`), so an absent sim means a skipped unit
 rather than a failed service, and `pdp` says which package to install. The
 spec names them as `Suggests:` (`vt05`, `tek4010`, `imlac`, `tv11`, `tvcon`,
-`cbridge`) so `dnf` offers them when it offers this package - suggested, not
+`open-simh`) so `dnf` offers them when it offers this package - suggested, not
 required, because a headless box or a Teletype-only cabinet needs none of them
 and an unresolvable suggestion is silently skipped by dnf, which is what lets
-`imlac`/`tvcon`/`cbridge` be named before their specs join the COPR. Each
+`imlac`/`tvcon` be named before their specs join the COPR. The Chaosnet bridge
+is the exception, a `Recommends: chaosnet-bridge` (installed by default, still
+optional): ITS's network is Chaosnet, and the unit skips itself without it. Each
 belongs in its own repo and spec - they are DEC, Datapoint and IMLAC emulators
 that other PDP projects use too, and they have licenses of their own:
 
@@ -264,7 +266,7 @@ that other PDP projects use too, and they have licenses of their own:
 | `vt05 vt50 vt52 dp3300 dm2500 gecon` | `aap/vt05` | MIT |
 | `tv11 tvcon` | `aap/pdp11` | BSD-2 |
 | `tek4010` | `rricharz/Tek4010` | GPL-3.0 |
-| `cbridge` | `bictorv/chaosnet-bridge` | Apache-2.0 |
+| `cbridge` (package `chaosnet-bridge`) | `bictorv/chaosnet-bridge` | Apache-2.0 |
 | `supdup` | `PDP-10/supdup` | to confirm |
 | `gw mlftp shutdown gateway.sh` | `Chaosnet/chaosnet-tools` | to confirm |
 | `mkpty33` | `aap/pdp6` (`tools/mkpty33.c`) | MIT |
@@ -295,7 +297,8 @@ Enable aarch64 *and* x86-64: the engines are architecture-neutral (everything
 is compiled, `%check` boots all five), and the x86-64 chroot is what catches
 architecture assumptions early. Multi-spec projects (`:multi-spec: yes`) are the
 next step once the terminal packages have specs of their own - one project so
-the `Suggests:` above (`vt05 tek4010 imlac tv11 tvcon cbridge`) resolve in the
+the `Suggests:` and `Recommends:` above (`vt05 tek4010 imlac tv11 tvcon
+open-simh chaosnet-bridge`) resolve in the
 repo the user just enabled, separate SRPMs so each keeps its own version and
 licence.
 

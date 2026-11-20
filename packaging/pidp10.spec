@@ -129,6 +129,9 @@ Recommends:     libgpiod-utils
 Recommends:     %{name}-panel%{?_isa} = %{version}-%{release}
 # pdp con / pdp sty, and the pidp10-teletype unit, run sty.
 Requires:       %{name}-clients%{?_isa} = %{version}-%{release}
+# ITS's Chaosnet (pidp10-cbridge.service). Recommended, not required: the unit
+# is skipped without /usr/bin/cbridge, and ITS boots without Chaosnet.
+Recommends:     chaosnet-bridge
 Suggests:       firewalld
 Suggests:       vt05
 Suggests:       tek4010
@@ -137,7 +140,6 @@ Suggests:       tv11
 Suggests:       tvcon
 # pdp gt40: open-simh-pdp11 (Fedora simh-pdp11 3.12 cannot run gt40.simh)
 Suggests:       open-simh
-Suggests:       cbridge
 %{?systemd_requires}
 
 %description
