@@ -1,0 +1,61 @@
+#!/bin/bash
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Add the PiDP-10 tilix profiles to the calling user's tilix settings.
+#
+#   pidp10-tilix-profiles           merge them (what `pdp view-setup` runs)
+#   pidp10-tilix-profiles --check   exit 0 if they are already there
+#
+# /usr/share/pidp10/view.json (the `pdp view` layout) names its panes' profiles
+# by UUID, and the profiles - which carry the commands the panes run - live in
+# the user's dconf, not in a file tilix reads. Upstream's install.sh did
+# "dconf load /com/gexperts/Tilix/ < pidp10tilix.conf", which also replaces the
+# user's global tilix settings (the [/] section) and their whole profile list.
+# This loads only the [profiles/<uuid>] sections and appends their UUIDs to
+# the existing list, so a user's own profiles and settings survive.
+
+set -euo pipefail
+
+: "${PIDP10_PREFIX:=/usr/share/pidp10}"
+conf=$PIDP10_PREFIX/pidp10tilix.conf
+base=/com/gexperts/Tilix/profiles
+
+command -v dconf >/dev/null 2>&1 || { echo "pidp10-tilix-profiles: dconf not found (dnf install dconf)" >&2; exit 1; }
+[ -r "$conf" ] || { echo "pidp10-tilix-profiles: $conf not found" >&2; exit 1; }
+
+uuids=$(sed -n 's|^\[profiles/\([0-9a-f-]*\)\]$|\1|p' "$conf")
+
+if [ "${1:-}" = --check ]; then
+	for u in $uuids; do
+		[ -n "$(dconf read "$base/$u/visible-name")" ] || exit 1
+	done
+	exit 0
+fi
+
+for u in $uuids; do
+	# The section body, re-rooted at the profile's own path.
+	{
+		echo '[/]'
+		awk -v sec="[profiles/$u]" '
+			$0 == sec { on = 1; next }
+			/^\[/     { on = 0 }
+			on && NF  { print }' "$conf"
+	} | dconf load "$base/$u/"
+done
+
+# Append the UUIDs to the profile list. An unset list means tilix is using
+# only its default profile, which has to stay in the list.
+list=$(dconf read "$base/list")
+if [ -z "$list" ] || [ "$list" = "@as []" ]; then
+	def=$(dconf read "$base/default" | tr -d "'")
+	list="[${def:+'$def'}]"
+fi
+for u in $uuids; do
+	case "$list" in
+		*"'$u'"*) ;;
+		"[]")     list="['$u']" ;;
+		*)        list="${list%]}, '$u']" ;;
+	esac
+done
+dconf write "$base/list" "$list"
+echo "pidp10-tilix-profiles: PiDP-10 profiles added to tilix ($(echo $uuids | wc -w)); 'pdp view' opens the layout"

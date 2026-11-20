@@ -53,10 +53,17 @@ and needs membership of the
 .Nm pidp10
 group.
 .It Ic view
-Open the browser front panel (simh's own telnet view, port 10001) via
-.Ev BROWSER
-or
-.Xr xdg-open 1 .
+Open the all-in-one
+.Xr tilix 1
+layout
+.Pa /usr/share/pidp10/view.json :
+the PDP-10's simh session, the console, and the Knight TV server's log.
+Its panes run tilix profiles that must be in your tilix settings first; see
+.Ic view-setup .
+.It Ic view-setup
+Add the PiDP-10 tilix profiles to your tilix settings, once per user.
+Only the five PiDP-10 profiles are added; your own profiles and tilix
+settings are kept.
 .It Ic con
 The Teletype Model 33: the bundled
 .Xr sty 1
@@ -64,32 +71,46 @@ terminal attached to the console port.
 .It Ic telcon | console
 Plain telnet to the console port in an xterm.
 .It Ic vt52 | vt05
-DEC VT52 / VT05 emulators (from the
+DEC VT52 / VT05 emulator (from the
 .Nm vt05
-package) on the console port.
+package) in its own window, on ITS terminal line 9 (port 10018).
 .It Ic tvcon
-Knight TV terminal (from the same package as
-.Nm tv11 )
-on the TV Typer port.
+Knight TV display (from the
+.Nm tvcon
+package), connected to the
+.Nm tv11
+display server
+.Pq Pa pidp10-tv11.service .
 .It Ic tek | tek4010
 Tektronix 4010 storage tube (from the
 .Nm tek4010
-package).
+package) at 9600 baud, on ITS terminal line 8 (port 10017).
 .It Ic imlac
-IMLAC PDP-5 display (from the
+IMLAC PDS-1 (from the
 .Nm imlac
-package).
+package) running
+.Pa conf/imlac.simh ,
+on ITS terminal line 7 (port 10016).
 .It Ic dp3300 | dp3300-ascii
-Datapoint DP-3300 / DECwriter II.
-.It Ic type340 | sty
-ADSEC Type 340 console (the bundled
-.Xr sty 1 )
-on the console port.
+Datapoint 3300, on ITS terminal line 15 (port 10020).
+.It Ic type340
+Reopen the KA10's Type 340 display window: types ^E,
+.Ic set dpy dis ,
+.Ic set dpy ena
+and
+.Ic c
+into the simh session, as upstream's
+.Pa type340.expect
+did.
+.It Ic sty
+The Teletype emulator on the console port, as
+.Ic con .
 .It Ic gt40 | pictor
-GT-40 / Pictor 501 display (the DP-3300 in
-.Fl t
-.Ar gt40
-mode).
+A GT40 (PDP-11 with a VT11 display): simh's
+.Nm pdp11
+running
+.Pa conf/gt40.simh ,
+in a terminal, on ITS terminal line 11 (port 10019).
 .It Ic pdp6
 Attach, in this terminal, to the PDP-6's screen session
 .Dq pidp6 .
@@ -115,8 +136,11 @@ Not offered; use
 Console telnet port (default 1025; policy lives in
 .Pa /etc/pidp10/pidp10.conf ) .
 .It Ev PIDP10_TV11_PORT
-TV Typer port for
-.Ic tvcon .
+Port on the
+.Nm tv11
+display server that
+.Ic tvcon
+connects to; unset uses tvcon's default, which is where tv11 serves.
 .It Ev PIDP10_TERMINAL
 Terminal emulator to launch commands in; without it, tilix, gnome-terminal,
 xfce4-terminal and xterm are tried in that order.

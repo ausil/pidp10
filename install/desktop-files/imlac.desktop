@@ -2,7 +2,7 @@
 Name=Imlac
 Comment=Manage PDP-10 peripherals
 Exec=nohup pdp imlac
-Terminal=true
+Terminal=false
 Type=Application
 Icon=imlac
 Categories=X-PDP10;

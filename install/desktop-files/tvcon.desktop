@@ -2,7 +2,7 @@
 Name=Knight TV
 Comment=Manage PDP-10 peripherals
 Exec=nohup pdp tvcon
-Terminal=true
+Terminal=false
 Type=Application
 Icon=knight
 Categories=X-PDP10;

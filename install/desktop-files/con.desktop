@@ -2,7 +2,7 @@
 Name=Noisy Teletype
 Comment=Manage PDP-10 peripherals
 Exec=nohup pdp con
-Terminal=true
+Terminal=false
 Type=Application
 Icon=con
 Categories=X-PDP10;

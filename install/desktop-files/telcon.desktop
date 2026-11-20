@@ -2,7 +2,7 @@
 Name=Teletype (telcon)
 Comment=Manage PDP-10 peripherals
 Exec=nohup pdp telcon
-Terminal=true
+Terminal=false
 Type=Application
 Icon=telcon
 Categories=X-PDP10;
