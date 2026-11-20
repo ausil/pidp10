@@ -265,6 +265,8 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %dir %{_datadir}/%{srcname}
 %dir %{_datadir}/%{srcname}/conf
 %{_datadir}/%{srcname}/conf/*
+# The GT40 boot ROM is in -clients, for the GT40 terminal on other machines.
+%exclude %{_datadir}/%{srcname}/conf/bootvt.img
 %{_bindir}/pdp10-ka
 %{_bindir}/pdp10-ki
 %{_bindir}/pdp10-kl
@@ -324,6 +326,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %{_bindir}/st
 %{_mandir}/man1/st.1*
 %dir %{_datadir}/%{srcname}
+# The GT40's VT11 boot ROM: the open-simh GT40 terminal (rpdp gt40, and
+# pdp gt40 through conf/gt40.simh) boots from it.
+%dir %{_datadir}/%{srcname}/conf
+%{_datadir}/%{srcname}/conf/bootvt.img
 %dir %{_datadir}/%{srcname}/sounds
 %{_datadir}/%{srcname}/sounds/*
 # sty and st draw in the TELETYPE 1945-1985 font.
