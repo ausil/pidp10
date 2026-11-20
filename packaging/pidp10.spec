@@ -202,6 +202,9 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %sysusers_create_package %{name} %SOURCE1
 
 %post
+# The systemd_* macros take their arguments up to the end of the line: a
+# backslash continuation splits the generated command and the shell runs the
+# second line as a command of its own. Keep each unit list on one line.
 %tmpfiles_create_package %{name} %SOURCE2
 %systemd_post pidp10-cbridge.service pidp10-engine@.service
 %systemd_user_post pidp10.service pidp10@.service pidp10.target
@@ -215,16 +218,13 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %systemd_user_postun_with_restart pidp10.service
 
 %post ui
-%systemd_user_post pidp10-console.service pidp10-teletype.service \
-    pidp10-tv11.service pidp10-view.service
+%systemd_user_post pidp10-console.service pidp10-teletype.service pidp10-tv11.service pidp10-view.service
 
 %preun ui
-%systemd_user_preun pidp10-console.service pidp10-teletype.service \
-    pidp10-tv11.service pidp10-view.service
+%systemd_user_preun pidp10-console.service pidp10-teletype.service pidp10-tv11.service pidp10-view.service
 
 %postun ui
-%systemd_user_postun_with_restart pidp10-console.service \
-    pidp10-teletype.service pidp10-tv11.service pidp10-view.service
+%systemd_user_postun_with_restart pidp10-console.service pidp10-teletype.service pidp10-tv11.service pidp10-view.service
 
 
 %files
