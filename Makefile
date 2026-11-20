@@ -30,7 +30,9 @@ USERPRESETDIR ?= $(PREFIX)/lib/systemd/user-preset
 SYSUSERSDIR   ?= $(PREFIX)/lib/sysusers.d
 TMPFILESDIR   ?= $(PREFIX)/lib/tmpfiles.d
 UDEVDIR       ?= $(PREFIX)/lib/udev/rules.d
-LOGINDDIR     ?= $(PREFIX)/lib/systemd/logind.conf.d
+SUDOERSDIR    ?= $(SYSCONFDIR)/sudoers.d
+POLKITRULESDIR ?= $(PREFIX)/share/polkit-1/rules.d
+LOGROTATEDIR  ?= $(SYSCONFDIR)/logrotate.d
 FIREWALLDIR   ?= $(PREFIX)/lib/firewalld/services
 ICONSDIR      ?= $(PREFIX)/share/icons/hicolor
 APPSDIR       ?= $(PREFIX)/share/applications
@@ -82,6 +84,7 @@ ENGINES        := pdp10-ka pdp10-ki pdp10-kl pdp10-ks pdp6
 # an old boot script or an upstream README - is redirected with it instead of
 # being installed pointing at a directory this package does not create.
 SUBST = sed -e 's|/usr/libexec/pidp10|$(LIBEXECDIR)|g' \
+            -e 's|/usr/bin/pdp6 |$(BINDIR)/pdp6 |g' \
             -e 's|/var/lib/pidp10/systems|$(SYSTEMSDIR)|g' \
             -e 's|$(PREFIX)/share/pidp10/systems|$(SYSTEMSDIR)|g' \
             -e 's|/usr/share/pidp10/systems|$(SYSTEMSDIR)|g' \
@@ -166,7 +169,8 @@ install:
 	    $(DESTDIR)$(SYSTEMSDIR) $(DESTDIR)$(DATADIR)/conf $(DESTDIR)$(DATADIR)/sounds \
 	    $(DESTDIR)$(SYSCONFDIR)/pidp10 $(DESTDIR)$(UNITDIR) $(DESTDIR)$(USERUNITDIR) \
 	    $(DESTDIR)$(PRESETDIR) $(DESTDIR)$(USERPRESETDIR) $(DESTDIR)$(SYSUSERSDIR) \
-	    $(DESTDIR)$(TMPFILESDIR) $(DESTDIR)$(UDEVDIR) $(DESTDIR)$(LOGINDDIR) \
+	    $(DESTDIR)$(TMPFILESDIR) $(DESTDIR)$(UDEVDIR) \
+	    $(DESTDIR)$(SUDOERSDIR) $(DESTDIR)$(POLKITRULESDIR) $(DESTDIR)$(LOGROTATEDIR) \
 	    $(DESTDIR)$(FIREWALLDIR) $(DESTDIR)$(ICONSDIR)/48x48/apps \
 	    $(DESTDIR)$(ICONSDIR)/scalable/apps $(DESTDIR)$(APPSDIR) \
 	    $(DESTDIR)$(FONTSDBIR) $(DESTDIR)$(COMPLETIONDIR) $(DESTDIR)$(MANDIR)/man1
@@ -214,7 +218,7 @@ install:
 	@# (the Teletype recordings are part of sty33's sources) or under
 	@# install/fedora (config this project writes); nothing is installed from
 	@# bin/, which holds no tracked files.
-	for c in cbridge.conf chaos-hosts init.ini gt40.simh imlac.simh ssv22.iml; do \
+	for c in cbridge.conf chaos-hosts init.ini pdp6.ini gt40.simh imlac.simh ssv22.iml; do \
 	    $(SUBST) install/fedora/conf/$$c > $(DESTDIR)$(DATADIR)/conf/$$c; done
 	chmod 0644 $(DESTDIR)$(DATADIR)/conf/*
 	install -m 0644 install/fedora/conf/bootvt.img $(DESTDIR)$(DATADIR)/conf/
@@ -239,7 +243,13 @@ install:
 	$(SUBST) install/fedora/tmpfiles.d/pidp10.conf > $(DESTDIR)$(TMPFILESDIR)/pidp10.conf
 	chmod 0644 $(DESTDIR)$(TMPFILESDIR)/pidp10.conf
 	install -m 0644 install/fedora/udev.d/99-pidp10.rules $(DESTDIR)$(UDEVDIR)/
-	install -m 0644 install/fedora/systemd/logind.conf.d/60-pidp10-rt.conf $(DESTDIR)$(LOGINDDIR)/
+	@# Console access for the pidp10 group: attach to the engines' screen
+	@# sessions (sudoers, 0440 or sudo refuses it) and start/stop their units
+	@# (polkit). The engine's RT priority is the system unit's LimitRTPRIO, so
+	@# the old logind DefaultLimitRTPRIO drop-in for user sessions is gone.
+	install -m 0440 install/fedora/sudoers.d/pidp10 $(DESTDIR)$(SUDOERSDIR)/pidp10
+	install -m 0644 install/fedora/polkit-1/rules.d/50-pidp10.rules $(DESTDIR)$(POLKITRULESDIR)/
+	install -m 0644 install/fedora/logrotate.d/pidp10 $(DESTDIR)$(LOGROTATEDIR)/pidp10
 	install -m 0644 install/fedora/firewalld/pidp10.xml $(DESTDIR)$(FIREWALLDIR)/
 	@# desktop integration, with the paths rewritten: the entries carry
 	@# /usr/share paths in the tree (so they read correctly on a checkout)

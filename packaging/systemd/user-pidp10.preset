@@ -2,21 +2,21 @@
 #
 # Deliberately all disabled.
 #
-# The user units are the kiosk: engine + Knight-TV + operator terminals, all
-# started in graphical-session.target of whoever logs in. Enabling them for
-# every user on the machine would mean a login spawns X windows and grabs an
-# RT-priority CPU - wrong on the build box where you just want the sources.
+# The user units are the desktop half of the kiosk: Knight-TV, the operator
+# terminals, and the xhost grant that lets the engine (a system unit running
+# as pidp10, see pidp10.preset) draw its windows. They start in
+# graphical-session.target of whoever logs in, so enabling them for every user
+# on the machine would mean every login spawns X windows - wrong on the build
+# box where you just want the sources.
 #
-# On the cabinet, turn the kiosk on for the account that owns the panel:
+# On the cabinet, turn them on for the account at the screen:
 #
-#   loginctl enable-linger pidp10                  # start without a login
-#   systemctl --user enable pidp10.target           # boot at session start
+#   systemctl --user enable pidp10.target           # at session start
 #
 # or, for one session only:  systemctl --user start pidp10.target
 
 disable pidp10.target
-disable pidp10.service
-disable pidp10@.service
+disable pidp10-xhost.service
 disable pidp10-view.service
 disable pidp10-tv11.service
 disable pidp10-teletype.service

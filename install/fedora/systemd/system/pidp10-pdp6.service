@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# The PDP-6, sharing memory with the KA10 when it runs ITS (boot 1). Runs as
+# the pidp10 system user in a detached screen session named "pidp6", like the
+# PDP-10 engine (pidp10-engine@.service).
+#
+#   systemctl start pidp10-pdp6.service
+#   pdp pdp6                                # attach: PDP-6 console, ^E = sim>
+#
+# conf/pdp6.ini attaches the SLAVE device to the KA10's auxcpu listener
+# ("at auxcpu 10006" in systems/its/boot.*). The link retries, so the start
+# order is only a preference: After=, no Requires=, and a stopped PDP-6 does
+# not take the PDP-10 down with it. The console is the screen session itself
+# (no telnet console), so the PDP-6 terminal and its sim> prompt are one place.
+
+[Unit]
+Description=PDP-6 (shared memory with the KA10 under ITS, console in screen session pidp6)
+Documentation=man:pdp(1)
+After=pidp10-engine@default.service pidp10-engine@1.service
+
+[Service]
+Type=forking
+User=pidp10
+WorkingDirectory=/var/lib/pidp10
+# Default, not a demand: the conf file is loaded after this and wins.
+Environment=PIDP10_PDP6_AUXCPU=localhost:10006
+EnvironmentFile=-/etc/pidp10/pidp10.conf
+Environment=TERM=screen
+# The PDP-6's 340 display is off in pdp6.ini; no SDL window is opened.
+Environment=SDL_VIDEODRIVER=dummy
+ExecStart=/usr/libexec/pidp10/pidp10-screen -dmS pidp6 -h 2000 -L -Logfile /var/log/pidp10/pidp6-console.log /usr/bin/pdp6 /usr/share/pidp10/conf/pdp6.ini
+ExecStop=/usr/libexec/pidp10/pidp10-stop pidp6
+Restart=no
+TimeoutStopSec=25
+KillMode=mixed
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+PrivateTmp=no
+ReadWritePaths=/var/lib/pidp10 /var/log/pidp10
+# The screen sockets: a private SCREENDIR, not the shared /run/screen. screen
+# without its setgid bit (which NoNewPrivileges= and the sandboxing options
+# that imply it strip) refuses /run/screen unless it is mode 777; a SCREENDIR
+# owned by the user at 0700 is what it accepts instead. pidp10-session and
+# pidp10-stop use the same directory.
+RuntimeDirectory=pidp10/screen
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+Environment=SCREENDIR=/run/pidp10/screen
+
+[Install]
+WantedBy=multi-user.target

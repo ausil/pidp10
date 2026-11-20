@@ -1,52 +1,74 @@
 # SPDX-License-Identifier: BSD-2-Clause
 #
-# Headless twin of the engine: run the PDP-10 from the SYSTEM manager on a box
-# with no monitor and no X session (e.g. a Pi 5 that only drives the front
-# panel, administered over the network). Use this one when you do NOT want the
-# SDL windows; the type340/DD displays and tvcon then simply are not
-# available, and the console is telnet localhost:1025.
+# The PDP-10 engine: simh KA10/KI10/KL10 with the front-panel thread, run as
+# the pidp10 system user in a detached screen session named "pidp10", the
+# same way the PiDP-11's pidp11-simh.service runs its engine.
 #
-# Capability story: a user manager cannot put capabilities on a process, so
-# CAP_SYS_NICE for the blinkenlight thread has to come from here. This is the
-# only place we ask for privileges, and it is a *capability*, not setuid root
-# (the install.sh "chmod +s bin/pidp10 bin/pdp10-ka" hack).
+#   systemctl enable --now pidp10-engine@default.service  # PIDP10_BOOT / panel
+#   systemctl start pidp10-engine@1.service               # ITS, one-off
+#   pdp                                                    # attach (sim> is ^E)
+#   pdpcontrol start 1                                     # the same, wrapped
 #
-#   systemctl enable --now pidp10-engine@1.service
+# Why screen: simh's sim> prompt reads stdin, and the telnet listener on
+# PIDP10_CONSOLE_PORT is the PDP-10's own terminal, not that prompt. As a bare
+# unit, stdin was /dev/null: a ^E on the console halted the machine into a
+# prompt nobody could reach, and the panel's line reader spun on the EOF,
+# printing "sim>" into the journal. In screen, the prompt is a terminal an
+# operator attaches to (pdp, or pdpcontrol console). Every session is also
+# logged to /var/log/pidp10/pidp10-console.log.
+#
+# Why a system user: the state tree (/var/lib/pidp10, disk images included)
+# belongs to pidp10, and only the system manager can give the panel thread
+# CAP_SYS_NICE. The SDL windows (Type 340, DD) need the desktop to let pidp10
+# in: pidp10-xhost.service does that in the user session. pidp10-engine falls
+# back to SDL's dummy driver when there is no X server at all.
+#
+# Instance = boot number (octal, as the switch register shows it), or
+# "default" for PIDP10_BOOT in /etc/pidp10/pidp10.conf / the panel switches.
 
 [Unit]
-Description=PDP-10 engine, headless (boot %i)
-Documentation=https://obsolescence.dev/pdp10
+Description=PDP-10 engine (boot %i, console in screen session pidp10)
+Documentation=man:pdpcontrol(1) https://obsolescence.dev/pdp10
 After=network-online.target pidp10-cbridge.service
 Wants=network-online.target
-Conflicts=pidp10.service
+# One cabinet: a second instance would fight over the console port, the panel
+# and the screen session name. Conflicts= cannot name "every other instance of
+# this template", so pdpcontrol stops the running instance before it starts
+# another.
 
 [Service]
-Type=exec
+Type=forking
+User=pidp10
+# No Group=: pidp10's primary group is pidp10, and writing it here makes the
+# RPM dependency generator require a group this very package provides, which
+# rpmlint calls useless-provides and reviewers call a mistake.
+# i2c: /dev/i2c-* (the panel chip is already in the pidp10 group, see
+# udev.d/99-pidp10.rules).
+SupplementaryGroups=i2c
+WorkingDirectory=/var/lib/pidp10
 EnvironmentFile=-/etc/pidp10/pidp10.conf
 # The boot scripts in systems/*/boot.* must not spawn cbridge/tv11 themselves
 # when the daemons are units; pidp10-spawn no-ops on this. Set here rather than in
 # /etc/pidp10/pidp10.conf, where it would also disable them for `pdp con` runs
 # straight from a shell.
 Environment=PIDP10_MANAGED=1
-# No display: force simh/SDL into a null driver so it never blocks on X.
-Environment=SDL_VIDEODRIVER=dummy
-ExecStart=/usr/libexec/pidp10/pidp10-engine %i
-ExecStop=/usr/libexec/pidp10/pidp10-stop
+Environment=TERM=screen
+# -h: scrollback, enough to read back over a whole boot (Ctrl-A [).
+ExecStart=/usr/libexec/pidp10/pidp10-screen -dmS pidp10 -h 2000 -L -Logfile /var/log/pidp10/pidp10-console.log /usr/libexec/pidp10/pidp10-engine %i
+ExecStop=/usr/libexec/pidp10/pidp10-stop pidp10
 Restart=no
-RestartSec=5
+TimeoutStartSec=30
 TimeoutStopSec=25
 KillMode=mixed
 KillSignal=SIGTERM
 SendSIGKILL=yes
+# cbridge/gateway talk through /tmp/chaos_stream, and the SDL windows need the
+# X server socket in /tmp/.X11-unix.
 PrivateTmp=no
 
-User=pidp10
-# No Group=: pidp10's primary group is pidp10, and writing it here makes the
-# RPM dependency generator require a group this very package provides, which
-# rpmlint calls useless-provides and reviewers call a mistake.
-# The panel chip is already in the pidp10 group (udev.d/99-pidp10.rules); i2c
-# is the only group that has to be added, for /dev/i2c-*.
-SupplementaryGroups=i2c
+# --- front panel timing -------------------------------------------------
+# SCHED_FIFO for the blinkenlight thread, as a capability rather than the
+# install.sh "chmod +s bin/pidp10 bin/pdp10-ka" hack.
 NoNewPrivileges=yes
 AmbientCapabilities=CAP_SYS_NICE
 CapabilityBoundingSet=CAP_SYS_NICE
@@ -54,6 +76,7 @@ LimitRTPRIO=99
 Nice=-10
 CPUAffinity=0-3
 
+# --- filesystem ---------------------------------------------------------
 ProtectSystem=strict
 ProtectHome=yes
 ProtectKernelModules=yes
@@ -61,8 +84,18 @@ ProtectKernelTunables=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
-# simh writes its disk images, tapes and logs inside the tree.
+# simh writes its disk images, tapes and logs inside the state tree; screen
+# keeps its console log in /var/log.
 ReadWritePaths=/var/lib/pidp10 /var/log/pidp10
+# The screen sockets: a private SCREENDIR, not the shared /run/screen. screen
+# without its setgid bit (which NoNewPrivileges= and the sandboxing options
+# that imply it strip) refuses /run/screen unless it is mode 777; a SCREENDIR
+# owned by the user at 0700 is what it accepts instead. pidp10-session and
+# pidp10-stop use the same directory.
+RuntimeDirectory=pidp10/screen
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+Environment=SCREENDIR=/run/pidp10/screen
 # /dev/gpiochip* for the panel is group-writable for pidp10 itself, so no
 # supplementary gpio group is needed - and no PrivateDevices=, which would
 # mount a private /dev without the chip nodes at all.
@@ -70,3 +103,4 @@ PrivateDevices=no
 
 [Install]
 WantedBy=multi-user.target
+DefaultInstance=default

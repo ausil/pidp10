@@ -2,6 +2,10 @@
 #
 # Interactive simh console in a terminal.
 #
+# A terminal on the PDP-10's console telnet port (the machine's own terminal).
+# The simh sim> prompt is not here: it is the engine's screen session, which
+# `pdp` with no arguments attaches to.
+#
 # Upstream had no such unit: `pdp` with no arguments ran `screen -Dr pidp10`,
 # i.e. it re-attached the screen session that pdpcontrol.sh had created. With
 # systemd as the supervisor the console *is* the telnet listener the boot
@@ -15,7 +19,7 @@
 
 [Unit]
 Description=PiDP-10 simh console terminal
-After=graphical-session.target pidp10.service
+After=graphical-session.target
 PartOf=pidp10.target
 
 [Service]

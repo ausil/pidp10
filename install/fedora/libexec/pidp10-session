@@ -1,0 +1,84 @@
+#!/bin/bash
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Reach a simulator's screen session, whoever you are.
+#
+#   pidp10-session SESSION attach      attach (shared: several people may)
+#   pidp10-session SESSION running     exit 0 if the session exists
+#   pidp10-session SESSION stuff TEXT  type TEXT into it without attaching
+#
+# SESSION is pidp10 (the PDP-10 engine) or pidp6 (the PDP-6). The sessions
+# belong to the pidp10 system user. As that user screen is run directly, as
+# root through runuser, and as anyone else through sudo - the exact command
+# lines /etc/sudoers.d/pidp10 allows for members of the pidp10 group.
+
+set -uo pipefail
+
+svc_user=pidp10
+# The engines' private socket directory (see pidp10-engine@.service). Passed
+# through sudo by "env_keep" in /etc/sudoers.d/pidp10, and through runuser,
+# which keeps the environment.
+export SCREENDIR=/run/pidp10/screen
+session=${1:-}
+verb=${2:-}
+case "$session" in
+	pidp10|pidp6) ;;
+	*) echo "usage: pidp10-session pidp10|pidp6 attach|running|stuff TEXT" >&2; exit 2 ;;
+esac
+
+scr() {
+	if [ "$(id -un)" = "$svc_user" ]; then
+		/usr/bin/screen "$@"
+	elif [ "$(id -u)" -eq 0 ]; then
+		runuser -u "$svc_user" -- /usr/bin/screen "$@"
+	else
+		sudo -n -u "$svc_user" /usr/bin/screen "$@"
+	fi
+}
+
+# screen -ls exits non-zero even when it lists sessions, so judge by the
+# listing. Anything that is not a listing - sudo refusing, screen complaining
+# about its socket directory - is shown rather than read as "not running".
+running() {
+	local out
+	out=$(scr -ls "$session" 2>&1)
+	printf '%s\n' "$out" | grep -q "[0-9]\.$session[[:space:]]" && return 0
+	if printf '%s\n' "$out" | grep -qiE 'sudo|password|directory|permission|must'; then
+		printf 'pidp10-session: screen -ls %s as %s said:\n%s\n' "$session" "$svc_user" "$out" >&2
+	fi
+	return 1
+}
+
+not_running() {
+	local unit=pidp10-engine@default.service
+	[ "$session" = pidp6 ] && unit=pidp10-pdp6.service
+	echo "pidp10-session: $session is not running (pdpcontrol start, or systemctl start $unit)" >&2
+	if [ "$(id -u)" -ne 0 ] && [ "$(id -un)" != "$svc_user" ] &&
+	   ! id -nG | tr ' ' '\n' | grep -qx "$svc_user"; then
+		echo "pidp10-session: (or you cannot see it: attaching needs membership of the $svc_user group -" >&2
+		echo "pidp10-session:  sudo usermod -aG $svc_user $(id -un), then log in again)" >&2
+	fi
+	exit 1
+}
+
+case "$verb" in
+	running)
+		running
+		;;
+	attach)
+		running || not_running
+		if [ -t 0 ]; then
+			echo "pidp10-session: attaching to $session - ^E for sim>, Ctrl-A d to detach" >&2
+		fi
+		scr -x "$session"
+		;;
+	stuff)
+		[ $# -ge 3 ] || { echo "usage: pidp10-session $session stuff TEXT" >&2; exit 2; }
+		running || not_running
+		scr -S "$session" -X stuff "$3"
+		;;
+	*)
+		echo "usage: pidp10-session pidp10|pidp6 attach|running|stuff TEXT" >&2
+		exit 2
+		;;
+esac

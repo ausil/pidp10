@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Members of the pidp10 group may reach the simulator prompts, which are screen
+# sessions owned by the pidp10 system user: "pidp10" (the PDP-10 engine,
+# pidp10-engine@.service) and "pidp6" (the PDP-6, pidp10-pdp6.service).
+# libexec/pidp10-session runs exactly these command lines.
+#
+# Treat pidp10 group membership as trusted: anyone who can attach can type
+# simh commands (including "!" shell escapes) and screen's ^A : commands, all
+# of which run as the pidp10 user. The "-X stuff" lines grant nothing beyond
+# that - they type into the same session without attaching.
+Cmnd_Alias PIDP10_CONSOLE = \
+    /usr/bin/screen -ls pidp10, \
+    /usr/bin/screen -x pidp10, \
+    /usr/bin/screen -S pidp10 -X stuff *, \
+    /usr/bin/screen -ls pidp6, \
+    /usr/bin/screen -x pidp6, \
+    /usr/bin/screen -S pidp6 -X stuff *
+
+# The sessions live in a private socket directory, /run/pidp10/screen (screen
+# without setgid will not use the shared /run/screen); pidp10-session exports
+# SCREENDIR, and sudo would otherwise strip it.
+Defaults>pidp10 env_keep += "SCREENDIR"
+
+%pidp10 ALL=(pidp10) NOPASSWD: PIDP10_CONSOLE

@@ -1,13 +1,14 @@
 #!/bin/bash
 # SPDX-License-Identifier: BSD-2-Clause
 #
-# Start the PDP-10 engine in the foreground (for systemd).
+# Start the PDP-10 engine in the foreground. pidp10-engine@.service runs this
+# inside a detached screen session (pidp10-screen -dmS pidp10 ...).
 #
 # Replaces do_start() from bin/pdpcontrol.sh. Differences that matter:
-#   * no screen(1): the simh console is already a telnet listener on
-#     $PIDP10_CONSOLE_PORT (the boot scripts do "set cons -u telnet=1025"), so
-#     `pdp` / `pdpcontrol console` talk to that instead of detaching a screen
-#     session. systemd is the supervisor now.
+#   * screen(1) is still there, as upstream had it, because simh reads its
+#     sim> prompt from stdin: the telnet listener on $PIDP10_CONSOLE_PORT is
+#     the PDP-10's terminal, not the command prompt. systemd supervises the
+#     screen session; `pdp` / `pdpcontrol console` attach to it.
 #   * no setuid: the caller (systemd) decides privileges.
 #   * boot number comes from $1 (systemd instance) or PIDP10_BOOT, and the
 #     front-panel boot switch is only consulted when the panel is live.
@@ -40,7 +41,17 @@ PIDP10_PANEL=${PIDP10_PANEL:-auto}
 PIDP10_BOOTSCRIPT=${PIDP10_BOOTSCRIPT:-auto}
 SELECTIONS=$PIDP10_SELECTIONS
 
-die() { echo "pidp10-engine: $*" >&2; exit 1; }
+# Everything here runs on screen's terminal, which the journal never sees, so
+# status lines also go to the journal (under the unit, as this runs in its
+# cgroup).
+say() {
+	local prio=$1; shift
+	echo "pidp10-engine: $*" >&2
+	command -v systemd-cat >/dev/null 2>&1 &&
+		printf 'pidp10-engine: %s\n' "$*" | systemd-cat -t pidp10-engine -p "$prio"
+	return 0
+}
+die() { say err "$*"; exit 1; }
 
 [ -r "$SELECTIONS" ] || die "$SELECTIONS not found (is pidp10 installed, or set PIDP10_HOME to a checkout?)"
 
@@ -48,6 +59,9 @@ die() { echo "pidp10-engine: $*" >&2; exit 1; }
 # 1. boot number
 # ---------------------------------------------------------------------------
 instance=${1:-}
+# pidp10-engine@default.service: the boot number comes from PIDP10_BOOT or the
+# front panel switches, exactly as if no instance had been given.
+[ "$instance" = default ] && instance=
 have_instance=0
 if [ -n "$instance" ]; then
 	have_instance=1
@@ -171,7 +185,27 @@ pidp_path=$(command -v "$pidp_bin" || true)
 [ -x "$pidp_path" ] || pidp_path=${PIDP10_HOME:-}/bin/$pidp_bin
 [ -x "$pidp_path" ] || die "$pidp_bin not found (build src/pdp10 with: make PIDP10=1)"
 
-echo "pidp10-engine: boot=$boot_number ($sys_oct) system=$sel engine=$pidp_bin script=$ext console=tcp/$PIDP10_CONSOLE_PORT data=$bootdir state=$statedir"
+# ---------------------------------------------------------------------------
+# 6. display for the SDL windows (Type 340, DD)
+# ---------------------------------------------------------------------------
+# The engine runs as the pidp10 system user, so it can only open windows on a
+# display that lets it in: pidp10-xhost.service in the desktop session runs
+# "xhost +SI:localuser:pidp10". With no X server socket at all (a headless
+# cabinet), use SDL's dummy driver so simh never blocks or fails on a display.
+: "${PIDP10_DISPLAY=:0}"
+xsock=/tmp/.X11-unix/X${PIDP10_DISPLAY#:}
+xsock=${xsock%%.*}
+if [ -n "$PIDP10_DISPLAY" ] && [ -S "$xsock" ]; then
+	export DISPLAY=$PIDP10_DISPLAY
+	export SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-x11}
+	display_msg="display=$DISPLAY"
+else
+	unset DISPLAY
+	export SDL_VIDEODRIVER=dummy
+	display_msg="display=none"
+fi
+
+say notice "boot=$boot_number ($sys_oct) system=$sel engine=$pidp_bin script=$ext console=tcp/$PIDP10_CONSOLE_PORT $display_msg data=$bootdir state=$statedir"
 
 # simh resolves every attach/eval relative to its cwd, and the boot scripts
 # expect to start at the state root. Not the bin dir, as upstream did: that is

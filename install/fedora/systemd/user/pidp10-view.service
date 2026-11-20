@@ -13,7 +13,7 @@
 
 [Unit]
 Description=PiDP-10 all-in-one Tilix view
-After=graphical-session.target pidp10.service
+After=graphical-session.target
 PartOf=pidp10.target
 
 [Service]

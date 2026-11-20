@@ -5,15 +5,17 @@
 #
 # Upstream's version drove a detached screen(1) session: it typed Ctrl-E twice
 # into the simh prompt over a PTY (expect(1)), then `pkill -9`-ed whatever was
-# left. Here systemd owns the process, so control means systemctl, and the
-# polite simh "exit" goes through the console telnet port (pidp10-stop) so disk
-# buffers actually get flushed instead of being SIGKILL-ed away.
+# left. Here the screen session belongs to a system unit,
+# pidp10-engine@<boot>.service, running as the pidp10 user, so control means
+# systemctl, and the polite simh "quit" is typed into that session by the
+# unit's ExecStop (pidp10-stop) so disk buffers actually get flushed.
 #
-# usage: pdpcontrol [user|system] {start [boot]|stop|restart [boot]|status|
-#                                  stat|console|halt}
+# Members of the pidp10 group may start/stop the units without a password
+# (/usr/share/polkit-1/rules.d/50-pidp10.rules) and attach to the session
+# (/etc/sudoers.d/pidp10).
 #
-# `user` (the default) drives the per-user units, which is what needs DISPLAY
-# and PipeWire; `system` drives pidp10-engine@.service.
+# usage: pdpcontrol {start [boot]|stop|restart [boot]|status|stat|
+#                    console [pdp6]|halt [pdp6]}
 
 set -uo pipefail
 
@@ -29,39 +31,32 @@ set -uo pipefail
 : "${PIDP10_SELECTIONS:=$PIDP10_SYSTEMS/selections}"
 : "${PIDP10_CONSOLE_PORT:=1025}"
 
-
-scope=user
-case "${1:-}" in
-	user|system) scope=$1; shift ;;
-esac
-ctl=(systemctl)
-[ "$scope" = user ] && ctl=(systemctl --user)
-
 usage() {
-	echo "usage: pdpcontrol [user|system] {start [boot]|stop|restart [boot]|status|stat|console|halt}" >&2
+	echo "usage: pdpcontrol {start [boot]|stop|restart [boot]|status|stat|console [pdp6]|halt [pdp6]}" >&2
 	exit 2
 }
 
-# Boot number -> unit name. The instance is the octal boot number because that
+# The engine used to be a user unit, chosen with a "user|system" scope word.
+# It is a system unit only now; accept "system" so old habits keep working.
+case "${1:-}" in
+	system) shift ;;
+	user)
+		echo "pdpcontrol: the engine is a system unit now (pidp10-engine@.service, as the" >&2
+		echo "pdpcontrol: pidp10 user in a screen session); drop the 'user' word." >&2
+		exit 2
+		;;
+esac
+
+# Boot number -> instance. The instance is the octal boot number because that
 # is what the cabinet's switch register shows; decimal from the command line is
-# accepted and converted.
-conf_boot() {
-	local b=${1:-1}
+# accepted and converted. No boot number means "default": PIDP10_BOOT, or the
+# front panel switches when a panel is attached.
+instance_for() {
+	local b=${1:-}
+	[ -n "$b" ] || { echo default; return; }
 	[[ $b =~ ^[0-9]+$ ]] || { echo "pdpcontrol: bad boot number '$b'" >&2; exit 2; }
 	[[ $b =~ ^0[0-7]+$ ]] && b=$((8#$b))
-	printf '%04o' "$b"
-}
-
-# The plain (untemplated) unit is the "boot 1" cabinet most people run, and it
-# is the one that is preset-enabled; keep using it when no boot was requested.
-unit_for() {
-	if [ -z "${1:-}" ]; then
-		[ "$scope" = user ] && echo pidp10.service || echo pidp10-engine@0001.service
-	else
-		local oct=$(conf_boot "$1")
-		[ "$scope" = user ] && echo "pidp10@${oct}.service" \
-		                    || echo "pidp10-engine@${oct}.service"
-	fi
+	printf '%04o\n' "$b"
 }
 
 system_of() {
@@ -70,40 +65,75 @@ system_of() {
 	                END { if (!found) print "hills-blinky" }' < "$PIDP10_SELECTIONS" 2>/dev/null
 }
 
+# The engine instances that are running (at most one, unless someone started a
+# second by hand).
+active_engines() {
+	systemctl list-units --plain --no-legend --state=active,activating,deactivating \
+	    'pidp10-engine@*.service' 2>/dev/null | awk '{ print $1 }'
+}
+
+stop_engines() {
+	local u
+	for u in $(active_engines); do
+		echo "pdpcontrol: stopping $u"
+		systemctl stop "$u"
+	done
+}
+
+session_of() {
+	case "${1:-}" in
+		''|pdp10) echo pidp10 ;;
+		pdp6)     echo pidp6 ;;
+		*) echo "pdpcontrol: no machine '$1' (pdp10 or pdp6)" >&2; exit 2 ;;
+	esac
+}
+
 verb=${1:-}
 [ -n "$verb" ] || usage
 shift
 
 case "$verb" in
   start|restart)
-	boot=${1:-}
-	unit=$(unit_for "$boot")
-	sel=$(system_of "$(conf_boot "${boot:-1}")")
-	echo "pdpcontrol: $scope/$unit ($sel)"
-	"${ctl[@]}" "$verb" "$unit" || "${ctl[@]}" status "$unit"
+	inst=$(instance_for "${1:-}")
+	unit=pidp10-engine@$inst.service
+	if [ "$inst" = default ]; then
+		echo "pdpcontrol: $unit (boot from PIDP10_BOOT or the panel switches)"
+	else
+		echo "pdpcontrol: $unit ($(system_of "$inst"))"
+	fi
+	# One cabinet at a time: a second instance would fight over the console
+	# port, the panel and the screen session name.
+	for u in $(active_engines); do
+		[ "$u" = "$unit" ] && [ "$verb" = start ] && { echo "pdpcontrol: $unit is already running"; exit 0; }
+		echo "pdpcontrol: stopping $u"
+		systemctl stop "$u"
+	done
+	systemctl start "$unit" || { systemctl --no-pager status "$unit"; exit 1; }
+	echo "pdpcontrol: running; 'pdp' attaches to the simh session, 'pdp con' to the console"
 	;;
-  stop|halt)
-	unit=$(unit_for "${1:-}")
-	echo "pdpcontrol: $scope/$unit"
-	# ExecStop= runs pidp10-stop, which says "exit" to the simh console so
-	# simh flushes its disk buffers. This is a POWER switch, not an OS
-	# shutdown: bring ITS down from the console first.
-	"${ctl[@]}" stop "$unit"
+  stop)
+	# ExecStop= runs pidp10-stop, which types ^E and "quit" into the screen
+	# session so simh flushes its disk buffers. This is a POWER switch, not an
+	# OS shutdown: bring ITS down from the console first.
+	stop_engines
 	;;
   status)
-	if [ -n "${1:-}" ]; then
-		"${ctl[@]}" status "$(unit_for "$1")"
-	else
-		"${ctl[@]}" --no-pager --plain list-units 'pidp10*' || true
-	fi
+	systemctl --no-pager --plain list-units 'pidp10*' || true
 	;;
   stat)
-	printf 'PiDP-10  scope=%s  console=tcp/%s\n' "$scope" "$PIDP10_CONSOLE_PORT"
-	printf '  data   %s\n  state  %s\n' "$PIDP10_PREFIX" "$PIDP10_STATE"
-	"${ctl[@]}" --no-pager --plain list-units 'pidp10*' --no-legend || true
+	printf 'PiDP-10  console=tcp/%s  sessions: pidp10, pidp6 (pdp, pdp pdp6)\n' "$PIDP10_CONSOLE_PORT"
+	printf '  systems %s\n  state  %s\n' "$PIDP10_SYSTEMS" "$PIDP10_STATE"
+	systemctl --no-pager --plain list-units 'pidp10*' --no-legend || true
 	;;
   console)
-	exec "$PIDP10_LIBEXEC/pidp10-terminal" telnet localhost "$PIDP10_CONSOLE_PORT"
+	exec "$PIDP10_LIBEXEC/pidp10-session" "$(session_of "${1:-}")" attach
+	;;
+  halt)
+	# ^E is simh's break key: the CPU stops and the session shows sim>.
+	# Attach and type "c" to continue.
+	s=$(session_of "${1:-}")
+	"$PIDP10_LIBEXEC/pidp10-session" "$s" stuff $'\005' &&
+		echo "pdpcontrol: $s halted at sim>; 'pdpcontrol console${1:+ $1}' and 'c' to continue"
 	;;
   -h|--help|help)
 	usage

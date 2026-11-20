@@ -1,4 +1,4 @@
-.Dd November 5, 2026
+.Dd November 20, 2026
 .Dt PDPCONTROL 1
 .Os
 .Sh NAME
@@ -6,33 +6,49 @@
 .Nd control the PiDP-10 engine
 .Sh SYNOPSIS
 .Nm
-.Op Cm user | system
 .Ar subcommand
-.Op Ar boot
+.Op Ar argument
 .Sh DESCRIPTION
 .Nm
 starts, stops and inspects the PDP-10 engine.
-Systemd owns the process: with the default
-.Cm user
-scope
-.Nm
-drives the per-user
+The engine is the system unit
+.Ar pidp10-engine@boot Ns No \&.service ,
+which runs simh as the
 .Nm pidp10
-units (the ones that need
-.Ev DISPLAY
-and PipeWire);
-.Cm system
-drives the system-scope unit
-.Ar pidp10-engine@boot Ns No \&.service .
+user inside a detached
+.Xr screen 1
+session named
+.Dq pidp10 .
+That session is where simh's
+.Ic sim>
+prompt is; the telnet port
+.Pq Ev PIDP10_CONSOLE_PORT
+is the PDP-10's own terminal.
+.Pp
+Members of the
+.Nm pidp10
+group can start and stop the engine units without a password (a polkit
+rule) and attach to the session (a
+.Xr sudoers 5
+rule).
+Add yourself with
+.Ic sudo usermod -aG pidp10 Ns No \ \& Ns Ar you
+and log in again.
 .Pp
 Subcommands:
 .Bl -tag -width restart
 .It Cm start Op Ar boot
 Boot a system.
 .Ar boot
-is the octal switch-register value the maintenance panel would be set to;
-with no front panel attached you must give one (1 boots ITS, 2 TOPS-10 on
-the stock selections file).
+is the octal switch-register value the maintenance panel would be set to
+(1 boots ITS, 2 TOPS-10 on the stock selections file); it becomes the unit's
+instance.
+With no
+.Ar boot
+the instance is
+.Dq default :
+.Ev PIDP10_BOOT ,
+or the panel switches when a front panel is attached.
 Which system directory a number boots is decided by
 .Pa /var/lib/pidp10/systems/selections
 (the directory is
@@ -40,28 +56,38 @@ Which system directory a number boots is decided by
 defaulting to
 .Pa /var/lib/pidp10/systems ;
 it lives in the state tree because the boot scripts and the disk images they
-attach are one directory);
-with no
-.Ar boot
-the switch register decides, which sits at zero on a machine without a
-front panel.
+attach are one directory).
+A running engine with another boot number is stopped first: there is one
+cabinet.
 .It Cm stop
-Polite stop: the simh
-.Ic exit
-command goes in through the console telnet port (via the
+Polite stop: the unit's
 .Nm pidp10-stop
-helper) so disk buffers are flushed, rather than the old
-.Ic pkill -9 .
+types ^E and
+.Ic quit
+into the session, so simh flushes its disk buffers.
+This is a power switch, not an operating-system shutdown: bring ITS down
+from the console first.
 .It Cm restart Op Ar boot
 Stop, then start.
 .It Cm status
 Which units are active.
 .It Cm stat
-Engine state through the console port (registers, halt/cont).
-.It Cm console
-Attach to the simh console prompt.
-.It Cm halt
-Halt the CPU without stopping the engine.
+Console port, state directories and active units.
+.It Cm console Op Cm pdp6
+Attach to the simh session of the PDP-10, or of the PDP-6
+.Pq Pa pidp10-pdp6.service ,
+in this terminal.
+^E stops the machine at
+.Ic sim> ,
+.Ic c
+continues, Ctrl-A d detaches.
+.It Cm halt Op Cm pdp6
+Stop the CPU at
+.Ic sim>
+without stopping the engine: types ^E into the session.
+Attach and type
+.Ic c
+to continue.
 .El
 .Pp
 Operator policy is read from
@@ -72,18 +98,29 @@ Operator policy is read from
 and
 .Ev PIDP10_CONSOLE_PORT
 set there apply here too.
+.Sh FILES
+.Bl -tag -width Ds
+.It Pa /var/log/pidp10/pidp10-console.log , /var/log/pidp10/pidp6-console.log
+Everything the sessions printed.
+.It Pa /etc/sudoers.d/pidp10
+Who may attach.
+.It Pa /usr/share/polkit-1/rules.d/50-pidp10.rules
+Who may start and stop the units.
+.El
 .Sh EXIT STATUS
 .Ex -std
 .Sh EXAMPLES
 .Bl -tag -width Ds
 .It Ic pdpcontrol start 1
-Boot ITS on the user units.
-.It Ic pdpcontrol system status
-What the system-scope engine is doing.
+Boot ITS.
+.It Ic pdpcontrol console
+Get to
+.Ic sim> .
 .It Ic pdpcontrol stop
 Stop whatever is running, flushing disks.
 .El
 .Sh SEE ALSO
 .Xr pdp 1 ,
+.Xr screen 1 ,
 .Xr systemctl 1 ,
 .Pa /usr/share/doc/pidp10/README.md

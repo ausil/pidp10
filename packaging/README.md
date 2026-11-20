@@ -16,11 +16,13 @@ state in `/var/lib`, services managed by systemd, and no `chmod +s` anywhere.
 | `/usr/bin/{pinctrl,pidp-gpio-probe,pidp10-test}` | GPIO inspection, "is a cabinet attached?", cabinet bring-up test (`pidp10-panel`) | no |
 | `/usr/bin/{cbridge,tv11,tvcon,imlac,vt05,vt50,vt52,dp3300,dm2500,gecon,tek4010,supdup,gw}` | the device sims the boot scripts call - **not from this package**: each has its own upstream and its own spec (see "The device sims") | no |
 | `/usr/share/pidp10/{conf,sounds,view.json}` | cbridge.conf, chaos-hosts, `.wav` samples, browser panel | no |
-| `/usr/libexec/pidp10/` | `pidp10-engine`, `pidp10-teletype`, `pidp10-spawn`, `pidp10-stop`, `pidp10-terminal` | no |
+| `/usr/libexec/pidp10/` | `pidp10-engine`, `pidp10-screen`, `pidp10-session`, `pidp10-stop`, `pidp10-teletype`, `pidp10-spawn`, `pidp10-terminal` | no |
 | `/etc/pidp10/pidp10.conf` | operator configuration (`noreplace`) | yes, by you |
+| `/etc/sudoers.d/pidp10` | lets the `pidp10` group attach to the engines' screen sessions (`noreplace`) | no |
+| `/usr/share/polkit-1/rules.d/50-pidp10.rules` | lets the `pidp10` group start/stop/restart the engine units | no |
 | `/var/lib/pidp10/` | **cwd of the simulator**: disk/tape images, logs | yes |
 | `/var/lib/pidp10/systems/<name>/` | the boot scripts (`boot.pi` / `boot.pidp`), `selections`, **and the images they attach** | yes - the scripts ship with the package, the images are fetched |
-| `/var/lib/pidp10/logs/`, `/var/log/pidp10/` | console and cbridge logs | yes |
+| `/var/lib/pidp10/logs/`, `/var/log/pidp10/` | console logs (`pidp10-console.log`, `pidp6-console.log`, rotated by `/etc/logrotate.d/pidp10`) and cbridge logs | yes |
 
 The split that matters: everything the simulator writes lives in
 `/var/lib/pidp10`, and the engine `cd`s there before running a boot script, so
@@ -49,7 +51,7 @@ printf '0010\tmyits\n' >> /etc/pidp10/selections   # pdpcontrol start 8
 
 and set `PIDP10_SELECTIONS=/etc/pidp10/selections` in `/etc/pidp10/pidp10.conf`:
 `pidp10-engine` and `pdpcontrol` both source that file and the units load it
-through `EnvironmentFile=`, so one line covers `systemctl start pidp10@1` and
+through `EnvironmentFile=`, so one line covers `systemctl start pidp10-engine@1` and
 `pdpcontrol start 1`. It is the one path the config file is allowed to name -
 unlike `PIDP10_PREFIX`/`PIDP10_STATE` it is a file the operator owns, not the
 layout the build was given.
@@ -183,14 +185,49 @@ modes, and validates the desktop files.
 
 ## Services
 
-System scope: `pidp10-cbridge.service` (chaosnet) and
-`pidp10-engine@<octal-boot>.service`.
-User scope: `pidp10.target` plus `pidp10.service` / `pidp10@<boot>.service`,
-`pidp10-teletype`, `pidp10-tv11`, `pidp10-view`, `pidp10-console`.
+System scope, all running as the `pidp10` user:
 
-Engines run as an unprivileged user with `AmbientCapabilities=CAP_SYS_NICE`
-instead of setuid/setcap; RT priority comes from
-`/usr/lib/systemd/logind.conf.d/60-pidp10-rt.conf`.
+* `pidp10-engine@<boot>.service`: the PDP-10, in a detached screen session
+  named `pidp10`. The instance is the octal boot number, or `default` for
+  `PIDP10_BOOT` / the panel switches (`systemctl enable
+  pidp10-engine@default.service` boots it with the machine).
+* `pidp10-pdp6.service`: the PDP-6, in screen session `pidp6`. It shares memory
+  with ITS on the KA10 (boot 1) through the KA10's `auxcpu` listener on port
+  10006; its console is the session itself.
+* `pidp10-cbridge.service`: Chaosnet.
+
+This is the PiDP-11's layout (`pidp11-simh.service`), for the same reason:
+simh reads its `sim>` prompt from stdin, and the telnet listener on port 1025
+is the PDP-10's terminal, not that prompt. As a bare unit with stdin on
+`/dev/null` there was no way to reach `sim>`, and a ^E on the console halted
+the machine for good. Now:
+
+```sh
+sudo usermod -aG pidp10 $USER   # once, then log in again
+pdpcontrol start 1              # ITS; no password, via the polkit rule
+pdp                             # attach to sim> (^E stops, "c" continues, Ctrl-A d detaches)
+pdp con                         # the PDP-10's own terminal (telnet 1025)
+systemctl start pidp10-pdp6.service
+pdp pdp6                        # the PDP-6 console
+```
+
+Attaching runs `sudo -u pidp10 screen -x <session>`, which
+`/etc/sudoers.d/pidp10` allows for the `pidp10` group. Treat that group as
+trusted: an attached user can type simh `!` shell escapes, which run as
+`pidp10`. Sessions are logged to `/var/log/pidp10/<session>-console.log`.
+
+User scope (the desktop): `pidp10.target` with `pidp10-xhost` (runs
+`xhost +SI:localuser:pidp10` so the engine can open its Type 340 / DD windows
+on this display), `pidp10-teletype`, `pidp10-tv11`, `pidp10-view`,
+`pidp10-console`. Without an X server the engine uses SDL's dummy driver.
+
+The engines get `AmbientCapabilities=CAP_SYS_NICE` and `LimitRTPRIO=99` from
+their units instead of setuid/setcap. screen runs through
+`/usr/libexec/pidp10/pidp10-screen` (SELinux will not let systemd exec it
+directly), and its sockets live in a private `SCREENDIR=/run/pidp10/screen`
+(0700, `pidp10`): `NoNewPrivileges=` turns off screen's setgid bit, and without
+it screen refuses the shared `/run/screen` unless that is mode 777. To look at
+the sessions by hand: `sudo -u pidp10 SCREENDIR=/run/pidp10/screen screen -ls`.
 
 Boot numbers are the octal switch-register values (`0200` = TOPS-20), and
 `/var/lib/pidp10/systems/selections` maps them to a system directory.

@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: BSD-2-Clause
+//
+// Members of the pidp10 group may start, stop and restart the PiDP-10 engine
+// units without a password: pdpcontrol does "systemctl start
+// pidp10-engine@1.service", which is a system unit now that the engine runs
+// as the pidp10 user in a screen session. Only these units and these verbs;
+// enabling, editing or masking them still needs an administrator.
+polkit.addRule(function(action, subject) {
+    if (action.id != "org.freedesktop.systemd1.manage-units" ||
+        !subject.isInGroup("pidp10"))
+        return polkit.Result.NOT_HANDLED;
+    var unit = action.lookup("unit");
+    var verb = action.lookup("verb");
+    if (!/^pidp10-(engine@[A-Za-z0-9]+|pdp6)\.service$/.test(unit))
+        return polkit.Result.NOT_HANDLED;
+    if (verb == "start" || verb == "stop" || verb == "restart")
+        return polkit.Result.YES;
+    return polkit.Result.NOT_HANDLED;
+});

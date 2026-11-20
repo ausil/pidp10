@@ -13,9 +13,13 @@
 #     a tarball of checked-in binaries next to the sources.
 #   * No setuid, no setcap. The old flow did `chmod +s bin/pdp10-ka` and
 #     `setcap cap_sys_nice+ep`; capabilities come from the units instead
-#     (AmbientCapabilities=CAP_SYS_NICE) and RT priority from logind's
-#     DefaultLimitRTPRIO. A world-writable setuid simulator is how you end up
-#     with a root hole on a kiosk.
+#     (AmbientCapabilities=CAP_SYS_NICE, LimitRTPRIO=99). A world-writable
+#     setuid simulator is how you end up with a root hole on a kiosk.
+#   * The engines are system units running as the pidp10 user in detached
+#     screen sessions (pidp10, pidp6), like the PiDP-11's pidp11-simh. simh
+#     reads its sim> prompt from stdin, so a bare unit with stdin on /dev/null
+#     had no reachable prompt. Members of the pidp10 group attach through
+#     /etc/sudoers.d/pidp10 and start/stop the units through a polkit rule.
 #   * No network in scriptlets. The ~2 GB of ITS/TOPS/WAITS media is fetched
 #     by `pidp10-fetch-images`, which the operator runs deliberately.
 #   * Services are enabled by preset files, not by a post scriptlet; the
@@ -31,8 +35,8 @@
 #     a site-local boot copies the directory and points PIDP10_SELECTIONS at a
 #     table of its own - see packaging/README.md.
 #   * Nothing under /usr is marked %%config. A file in /usr must be replaceable
-#     by an upgrade; an operator who wants a different logind drop-in writes one
-#     in /etc/systemd/logind.conf.d/.
+#     by an upgrade; an operator who wants a different polkit rule writes one
+#     in /etc/polkit-1/rules.d/.
 #
 # rpmlint results that are correct as they stand are filtered in
 # packaging/rpmlint.toml (run them with `make rpmlint`), each with its
@@ -112,6 +116,14 @@ BuildRequires:  fontconfig-devel
 BuildRequires:  freetype-devel
 
 Requires:       systemd
+# The engines' consoles are screen sessions, attached through sudo, and the
+# units are started through the polkit rule.
+Requires:       screen
+Requires:       sudo
+Requires:       polkit
+# Lets the pidp10 user open the Type 340 / DD windows on the desktop
+# (pidp10-xhost.service); without it the engine runs headless.
+Recommends:     xhost
 Requires:       libgpiod >= 2.0
 Recommends:     libgpiod-utils
 Recommends:     %{name}-panel%{?_isa} = %{version}-%{release}
@@ -174,11 +186,11 @@ install -Dm 0644 src/sty33/sounds/README.md \
 # and presets are the supported way to express what the defaults are (an admin
 # gets the decision back with systemctl preset-all).
 %if %{with kiosk_default}
-sed -i 's|^disable pidp10-engine@0001.service|enable pidp10-engine@0001.service|' \
+sed -i 's|^disable pidp10-engine@.service$|enable pidp10-engine@.service default|' \
     %{buildroot}%{_presetdir}/pidp10.preset
 sed -i \
     -e 's|^disable pidp10.target|enable pidp10.target|' \
-    -e 's|^disable pidp10.service|enable pidp10.service|' \
+    -e 's|^disable pidp10-xhost.service|enable pidp10-xhost.service|' \
     -e 's|^disable pidp10-console.service|enable pidp10-console.service|' \
     -e 's|^disable pidp10-teletype.service|enable pidp10-teletype.service|' \
     -e 's|^disable pidp10-tv11.service|enable pidp10-tv11.service|' \
@@ -206,16 +218,15 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 # backslash continuation splits the generated command and the shell runs the
 # second line as a command of its own. Keep each unit list on one line.
 %tmpfiles_create_package %{name} %SOURCE2
-%systemd_post pidp10-cbridge.service pidp10-engine@.service
-%systemd_user_post pidp10.service pidp10@.service pidp10.target
+%systemd_post pidp10-cbridge.service pidp10-engine@.service pidp10-pdp6.service
+%systemd_user_post pidp10.target pidp10-xhost.service
 
 %preun
-%systemd_preun pidp10-cbridge.service pidp10-engine@.service
-%systemd_user_preun pidp10.service pidp10@.service pidp10.target
+%systemd_preun pidp10-cbridge.service pidp10-engine@.service pidp10-pdp6.service
+%systemd_user_preun pidp10.target pidp10-xhost.service
 
 %postun
 %systemd_postun_with_restart pidp10-cbridge.service
-%systemd_user_postun_with_restart pidp10.service
 
 %post ui
 %systemd_user_post pidp10-console.service pidp10-teletype.service pidp10-tv11.service pidp10-view.service
@@ -256,9 +267,9 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %{_libexecdir}/%{srcname}/*
 %{_unitdir}/pidp10-cbridge.service
 %{_unitdir}/pidp10-engine@.service
-%{_userunitdir}/pidp10.service
-%{_userunitdir}/pidp10@.service
+%{_unitdir}/pidp10-pdp6.service
 %{_userunitdir}/pidp10.target
+%{_userunitdir}/pidp10-xhost.service
 %{_presetdir}/pidp10.preset
 %{_userpresetdir}/pidp10.preset
 %{_sysusersdir}/30-pidp10.conf
@@ -279,7 +290,9 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %dir %{_sysconfdir}/%{srcname}
 %config(noreplace) %{_sysconfdir}/%{srcname}/pidp10.conf
 %{_prefix}/lib/firewalld/services/%{srcname}.xml
-%{_prefix}/lib/systemd/logind.conf.d/60-pidp10-rt.conf
+%config(noreplace) %attr(0440,root,root) %{_sysconfdir}/sudoers.d/pidp10
+%{_datadir}/polkit-1/rules.d/50-pidp10.rules
+%config(noreplace) %{_sysconfdir}/logrotate.d/pidp10
 
 %files panel
 %{_bindir}/pinctrl

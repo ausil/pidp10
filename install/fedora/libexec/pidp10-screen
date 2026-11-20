@@ -1,0 +1,31 @@
+#!/bin/sh
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# ExecStart wrapper for the engine units (pidp10-engine@.service,
+# pidp10-pdp6.service). Same as the PiDP-11's pidp11-screen. systemd must not
+# name /usr/bin/screen directly in ExecStart, for two independent reasons:
+#
+#   SELinux: the binary is screen_exec_t, and policy grants the transition into
+#   screen_t to the legacy daemon domain only. systemd itself (init_t) is
+#   denied { execute } and the unit dies at status=203/EXEC. Executing it from
+#   a bin_t script starts screen from the unconfined service domain, which is
+#   permitted.
+#
+# The sockets are not in the shared /run/screen: screen's setgid bit
+# (root:screen) never takes effect under these units, because NoNewPrivileges=
+# and the sandboxing options that imply it suppress setuid/setgid on exec, and
+# without it screen refuses /run/screen unless that directory is mode 777. The
+# units set SCREENDIR=/run/pidp10/screen instead (RuntimeDirectory=, pidp10,
+# 0700), which screen accepts from an unprivileged user. pidp10-session and
+# pidp10-stop use the same directory; /etc/sudoers.d/pidp10 keeps SCREENDIR
+# for the sudoed attach.
+#
+# (The PiDP-11's unit gets away with /run/screen plus SupplementaryGroups=screen
+# only because it has no sandboxing that implies NoNewPrivileges=.)
+#
+# Why screen at all: simh reads its sim> command prompt from stdin, never from
+# the telnet console. Under a bare systemd unit stdin is /dev/null, so a ^E on
+# the console halted the machine into a prompt nobody could reach (and the
+# panel's line reader spun on EOF, printing "sim>" into the journal). screen
+# gives simh a terminal that an operator can attach to.
+exec /usr/bin/screen "$@"

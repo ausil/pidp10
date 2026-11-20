@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Let the PDP-10 engine open its windows on this desktop.
+#
+# The engine runs as the pidp10 system user (pidp10-engine@.service), not as
+# the person logged in, so X refuses it by default and the Type 340 / DD
+# windows never appear. This grants exactly that one local account access to
+# this session's display - not "xhost +", which would open it to everyone -
+# and takes it back when the session ends.
+#
+# Part of pidp10.target; on its own:
+#   systemctl --user start pidp10-xhost.service
+
+[Unit]
+Description=PiDP-10: allow the pidp10 engine user on this display
+After=graphical-session.target
+PartOf=pidp10.target graphical-session.target
+ConditionPathExists=/usr/bin/xhost
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=DISPLAY=:0
+ExecStart=/usr/bin/xhost +SI:localuser:pidp10
+ExecStop=/usr/bin/xhost -SI:localuser:pidp10
+
+[Install]
+WantedBy=pidp10.target

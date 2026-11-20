@@ -21,13 +21,16 @@ set -uo pipefail
 : "${PIDP10_BIN:=}"
 : "${PIDP10_STATE:=/var/lib/pidp10}"
 : "${PIDP10_CONSOLE_PORT:=1025}"
+: "${PIDP10_LIBEXEC:=/usr/libexec/pidp10}"
 
 PIDP10_TV11_PORT=${PIDP10_TV11_PORT:-10011}
 
 usage() {
 	cat <<'EOF'
-usage: pdp <command>
+usage: pdp [command]
 
+  (none)          attach to the PDP-10's simh session (^E for sim>, Ctrl-A d detaches)
+  sim             the same
   view            show the virtual front panel in a browser
   con             console (Teletype emulator with sound)
   telcon          plain terminal console (telnet)
@@ -40,11 +43,12 @@ usage: pdp <command>
   dp3300          DIGITAL EQUIPMENT DP-3300 (DECwriter II)
   type340         ADSEC Type 340 console
   gt40            GT-40 / Pictor 501 display
-  pdp6            PDP-6 (KA10) console
-  pdp6-tty        PDP-6 console (VT50 emulator)
-  tv11-tty        TV Typer (VT05 emulator)
+  pdp6            attach to the PDP-6's session: its console and sim>
+                  (pidp10-pdp6.service)
 
-The engine itself is a systemd unit: pdpcontrol start [boot], pdpcontrol status.
+The engine is a system unit running in a screen session:
+pdpcontrol start [boot], pdpcontrol status. Attaching needs membership of the
+pidp10 group.
 EOF
 }
 
@@ -99,11 +103,15 @@ client() {
 	esac
 }
 
-cmd=${1:-}
-[ -n "$cmd" ] || { usage; exit 2; }
+cmd=${1:-sim}
 shift || true
 
 case "$cmd" in
+  sim)
+	# Upstream's bare `pdp` was `screen -Dr pidp10`; this is that, for a
+	# session owned by the pidp10 system user (see libexec/pidp10-session).
+	exec "$PIDP10_LIBEXEC/pidp10-session" pidp10 attach
+	;;
   view)
 	# The browser applet is data under the prefix; it opens simh's own telnet
 	# view (port 10001), not the console port.
@@ -149,9 +157,18 @@ case "$cmd" in
 	t=$(pdp_tool dm2500) || missing dm2500
 	client tilix "\"$t\" -t gt40"
 	;;
-  pdp6|pdp6-tty|tv11-tty)
-	echo "pdp: '$cmd' needs the PDP-6 side of the cabinet; see systems/ and" >&2
-	echo "pdp: pdpcontrol start <boot> with a boot number >= 64." >&2
+  pdp6)
+	# The PDP-6 has no telnet console: its console is its screen session, so
+	# the PDP-6 terminal and its sim> prompt are one place.
+	exec "$PIDP10_LIBEXEC/pidp10-session" pidp6 attach
+	;;
+  pdp6-tty)
+	echo "pdp: the PDP-6 console is its screen session now: 'pdp pdp6'" >&2
+	exit 2
+	;;
+  tv11-tty)
+	echo "pdp: tv11-tty is not offered by this package; for the Knight TV" >&2
+	echo "pdp: use pidp10-tv11.service and 'pdp tvcon'." >&2
 	exit 2
 	;;
   -h|--help|help)

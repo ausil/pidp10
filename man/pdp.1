@@ -6,12 +6,13 @@
 .Nd open the PDP-10 console and the AI Lab terminal simulators
 .Sh SYNOPSIS
 .Nm
-.Ar command
+.Op Ar command
 .Op Ar args ...
 .Sh DESCRIPTION
 .Nm
-is the operator front door for the PiDP-10: it opens the simh console and
-the peripheral simulators the boot scripts expect to find on
+is the operator front door for the PiDP-10: it attaches to the simh session,
+and opens the PDP-10 console and the peripheral simulators the boot scripts
+expect to find on
 .Em PATH ,
 each inside a terminal emulator so it gets a real TTY.
 The engine itself is controlled by
@@ -32,6 +33,25 @@ mysteriously.
 .Pp
 The commands:
 .Bl -tag -width Ds
+.It Ic sim
+The default with no command: attach, in this terminal, to the screen session
+.Dq pidp10
+that
+.Pa pidp10-engine@.service
+runs the PDP-10 in, as the
+.Nm pidp10
+user.
+This is where simh's
+.Ic sim>
+prompt is: press ^E to stop the machine and get it,
+.Ic c
+to continue, and Ctrl-A d to detach and leave everything running.
+Several people may be attached at once.
+Attaching goes through
+.Xr sudo 8
+and needs membership of the
+.Nm pidp10
+group.
 .It Ic view
 Open the browser front panel (simh's own telnet view, port 10001) via
 .Ev BROWSER
@@ -70,13 +90,24 @@ GT-40 / Pictor 501 display (the DP-3300 in
 .Fl t
 .Ar gt40
 mode).
-.It Ic pdp6 | pdp6-tty | tv11-tty
-Not offered by
-.Nm :
-these belong to the PDP-6 side of the cabinet; start them with
-.Ic pdpcontrol start
-using a boot number from
-.Pa /var/lib/pidp10/systems/selections .
+.It Ic pdp6
+Attach, in this terminal, to the PDP-6's screen session
+.Dq pidp6 .
+The session is the PDP-6 console, and ^E there gives its
+.Ic sim>
+prompt.
+The PDP-6 is
+.Pa pidp10-pdp6.service ,
+not a boot number: it runs next to ITS on the KA10
+.Pq Ic pdpcontrol start 1
+and shares memory with it through the KA10's
+.Ic auxcpu
+device.
+Start it with
+.Ic systemctl start pidp10-pdp6.service .
+.It Ic tv11-tty
+Not offered; use
+.Ic tvcon .
 .El
 .Sh ENVIRONMENT
 .Bl -tag -width Ds

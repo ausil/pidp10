@@ -1,0 +1,13 @@
+# The engines' screen sessions log their consoles here (screen -L -Logfile,
+# see pidp10-engine@.service and pidp10-pdp6.service). screen keeps the file
+# open, hence copytruncate.
+/var/log/pidp10/*-console.log {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su pidp10 pidp10
+}

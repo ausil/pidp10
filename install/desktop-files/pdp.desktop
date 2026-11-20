@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=SIMH Screen
 Comment=Manage PDP-10 peripherals
-Exec=lxterminal -e "pdp"
+Exec=pdp
 Terminal=true
 Type=Application
 Icon=simh

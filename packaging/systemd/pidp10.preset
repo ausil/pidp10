@@ -16,8 +16,13 @@
 # Chaosnet bridge: ITS wants it, and it is harmless enough to always have.
 enable  pidp10-cbridge.service
 
-# The cabinet itself, boot 1 (hills-blinky). Not enabled by default: it binds
-# the console port and asks for RT priority, which is a decision, not a
-# default. Starting it once is enough for most uses:
-#     pdpcontrol start            # or: systemctl start pidp10-engine@0001
-disable pidp10-engine@0001.service
+# The cabinet itself: the engine in its screen session, booting PIDP10_BOOT or
+# whatever the panel switches say (instance "default"). Not enabled by
+# default: it binds the console port and asks for RT priority, which is a
+# decision, not a default. Starting it once is enough for most uses:
+#     pdpcontrol start            # or: systemctl start pidp10-engine@default
+# The kiosk build turns this into "enable pidp10-engine@.service default".
+disable pidp10-engine@.service
+
+# The PDP-6 next to ITS: only useful with boot 1, so never on by default.
+disable pidp10-pdp6.service

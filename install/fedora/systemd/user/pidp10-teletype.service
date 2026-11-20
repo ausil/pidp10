@@ -11,7 +11,7 @@
 
 [Unit]
 Description=PiDP-10 Teletype Model 33 on the PDP-10 console
-After=graphical-session.target pidp10.service
+After=graphical-session.target
 PartOf=pidp10.target
 
 [Service]

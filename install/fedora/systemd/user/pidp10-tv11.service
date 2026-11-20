@@ -16,7 +16,6 @@
 Description=PiDP-10 Knight TV display server (tv11)
 After=graphical-session.target
 PartOf=pidp10.target
-Before=pidp10.service pidp10@.service
 
 # tv11 is aap/pdp11's Knight TV display server, its own package on PATH;
 # skip cleanly when it is not installed.
