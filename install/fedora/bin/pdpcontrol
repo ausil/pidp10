@@ -80,6 +80,31 @@ stop_engines() {
 	done
 }
 
+# tv11 (pidp10-tv11.service, the Knight TV server) is a user unit and the
+# engine a system unit, so systemd cannot order or restart one after the other.
+# tv11 connects to the engine's TEN11 port once and exits when that fails; its
+# unit retries 10 times in 5 minutes and then stays failed, so an engine that
+# was down longer than that leaves the Knight TV dead until someone resets it.
+# Do that here, for the user running pdpcontrol, if they use tv11 at all: the
+# unit is enabled, running, or failed. Quietly nothing when there is no user
+# manager (root, ssh without a session) or no tv11.
+#
+# With "failed-only" (the engine was already running, so a live tv11 is still
+# connected to it) only a failed unit is revived; a running one is left alone
+# rather than cutting off its tvcon.
+kick_tv11() {
+	local u=pidp10-tv11.service
+	if [ "${1:-}" = failed-only ]; then
+		systemctl --user is-failed -q "$u" 2>/dev/null || return 0
+	fi
+	systemctl --user is-enabled -q "$u" 2>/dev/null ||
+	systemctl --user is-active -q "$u" 2>/dev/null ||
+	systemctl --user is-failed -q "$u" 2>/dev/null || return 0
+	systemctl --user reset-failed "$u" 2>/dev/null
+	systemctl --user restart --no-block "$u" 2>/dev/null &&
+		echo "pdpcontrol: restarted $u (Knight TV server) for $(id -un)"
+}
+
 session_of() {
 	case "${1:-}" in
 		''|pdp10) echo pidp10 ;;
@@ -104,11 +129,12 @@ case "$verb" in
 	# One cabinet at a time: a second instance would fight over the console
 	# port, the panel and the screen session name.
 	for u in $(active_engines); do
-		[ "$u" = "$unit" ] && [ "$verb" = start ] && { echo "pdpcontrol: $unit is already running"; exit 0; }
+		[ "$u" = "$unit" ] && [ "$verb" = start ] && { echo "pdpcontrol: $unit is already running"; kick_tv11 failed-only; exit 0; }
 		echo "pdpcontrol: stopping $u"
 		systemctl stop "$u"
 	done
 	systemctl start "$unit" || { systemctl --no-pager status "$unit"; exit 1; }
+	kick_tv11
 	echo "pdpcontrol: running; 'pdp' attaches to the simh session, 'pdp con' to the console"
 	;;
   stop)
