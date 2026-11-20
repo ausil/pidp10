@@ -77,7 +77,7 @@
 
 Name:           %{srcname}
 Version:        %{simh_version}
-Release:        2.%{srcdate}%{?dist}
+Release:        3.%{srcdate}%{?dist}
 Summary:        PDP-10 simulator, front-panel emulation and AI Lab peripherals
 
 # simh is the MIT-like "Historical Permission Notice"; st/sty33 are MIT;
@@ -355,8 +355,18 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %{_datadir}/%{srcname}/pidp10tilix.conf
 
 %changelog
+* Fri Nov 20 2026 Dennis Gilmore <dennis@ausil.us> - 4.1.0-3.20261106
+- Recommend chaosnet-bridge (was a Suggests on cbridge, which nothing provides)
+- pidp10-cbridge.service: make /tmp writable instead of the not yet existing
+  /tmp/chaos_stream, which failed every start with 226/NAMESPACE; read the
+  packaged chaos-hosts instead of /opt/pidp10/bin/chaos-hosts
+- Engine: put libexec on PATH for the boot scripts' pidp10-spawn; attach the
+  auxcpu port with -u so a restart does not hit TIME_WAIT; make /tmp writable;
+  fix the X socket check that made every boot display=none; use SDL's dummy
+  audio driver so opening the Type 340 window no longer deadlocks
+
 * Fri Nov 20 2026 Dennis Gilmore <dennis@ausil.us> - 4.1.0-2.20261106
-- split the the bits needed for clients out to a -clients package
+- split the bits needed for clients out to a -clients package
 - make sure pdp pdp6 and pdp gt40 work
 
 * Wed Nov 04 2026 Dennis Gilmore <dennis@ausil.us> - 4.1.0-1.20261106
