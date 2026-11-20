@@ -48,7 +48,7 @@ usage: pdp [command]
   dp3300          Datapoint 3300 on ITS line 15 (port 10020)
   type340         reopen the KA10's Type 340 display window
   sty             Teletype emulator on the console (as con)
-  gt40            GT40 (simh pdp11 + VT11) on ITS line 11 (port 10019)
+  gt40            GT40 (Open SIMH pdp11 + VT11) on ITS line 11 (port 10019)
   pdp6            attach to the PDP-6's session: its console and sim>
                   (pidp10-pdp6.service)
 
@@ -78,7 +78,7 @@ pdp_tool() {
 missing() {
 	echo "pdp: $1 not found." >&2
 	case "$1" in
-		vt52|vt05|vt50|tvcon|tek4010|imlac|dp3300|dm2500|cbridge|tv11|supdup|gw|mlftp|shutdown|mkpty33|pdp11)
+		vt52|vt05|vt50|tvcon|tek4010|imlac|dp3300|dm2500|cbridge|tv11|supdup|gw|mlftp|shutdown|mkpty33|open-simh-pdp11)
 			echo "pdp: $1 is a device simulator: its own package, see packaging/README.md" >&2 ;;
 		*)	echo "pdp: build it from src/ with make, or install its package" >&2 ;;
 	esac
@@ -215,11 +215,15 @@ case "$cmd" in
 	t=$(pdp_tool sty) || missing sty
 	client tilix "\"$t\" -e telnet localhost $PIDP10_CONSOLE_PORT"
 	;;
-  gt40|pictor)
-	# A GT40 is a PDP-11 with a VT11 display: simh's pdp11 running
+  gt40)
+	# A GT40 is a PDP-11 with a VT11 display: Open SIMH's pdp11 running
 	# conf/gt40.simh, which connects to ITS line 11 (port 10019). simh's
-	# console needs a terminal.
-	t=$(pdp_tool pdp11) || missing pdp11
+	# console needs a terminal. Not a bare "pdp11": on a machine that also
+	# has the PiDP-11, /usr/bin/pdp11 is its control tool, and Fedora's
+	# simh-pdp11 (3.12) cannot run gt40.simh. The open-simh package's own
+	# /usr/bin/gt40 runs its gt40.ini, not this ITS wiring.
+	p=${PIDP10_PDP11:-open-simh-pdp11}
+	t=$(pdp_tool "$p") || missing "$p"
 	client xterm "\"$t\" \"$PIDP10_PREFIX/conf/gt40.simh\""
 	;;
   pdp6)

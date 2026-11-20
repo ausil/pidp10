@@ -133,6 +133,8 @@ Suggests:       tek4010
 Suggests:       imlac
 Suggests:       tv11
 Suggests:       tvcon
+# pdp gt40: open-simh-pdp11 (Fedora simh-pdp11 3.12 cannot run gt40.simh)
+Suggests:       open-simh
 Suggests:       cbridge
 %{?systemd_requires}
 
