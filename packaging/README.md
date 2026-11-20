@@ -9,13 +9,14 @@ state in `/var/lib`, services managed by systemd, and no `chmod +s` anywhere.
 | Path | Contents | Written at run time? |
 |---|---|---|
 | `/usr/bin/pdp10-{ka,ki,kl,ks}`, `/usr/bin/pdp6` | the simh engines | no |
-| `/usr/bin/{sty,st,scansw10}` | terminals and the maintenance-switch reader the engine unit calls | no |
+| `/usr/bin/{sty,st}`, `/usr/share/pidp10/sounds`, `/usr/share/fonts/pidp10` | the Teletype terminal, the plain one it is built from, their recordings and font (`pidp10-clients`) | no |
+| `/usr/bin/scansw10` | the maintenance-switch reader the engine unit calls | no |
 | `/usr/bin/{pdp,pdpcontrol}` | user front doors | no |
 | `/usr/share/man/man1/{pdp,pdpcontrol}.1` | their pages (the engines and panel tools are driven through the units; their interface is documented here) | no |
 | `/usr/bin/pidp10-fetch-images` | fetches the OS/media images into the state tree (the package ships none) | no |
 | `/usr/bin/{pinctrl,pidp-gpio-probe,pidp10-test}` | GPIO inspection, "is a cabinet attached?", cabinet bring-up test (`pidp10-panel`) | no |
 | `/usr/bin/{cbridge,tv11,tvcon,imlac,vt05,vt50,vt52,dp3300,dm2500,gecon,tek4010,supdup,gw}` | the device sims the boot scripts call - **not from this package**: each has its own upstream and its own spec (see "The device sims") | no |
-| `/usr/share/pidp10/{conf,sounds,view.json}` | cbridge.conf, chaos-hosts, `.wav` samples, browser panel | no |
+| `/usr/share/pidp10/{conf,view.json}` | cbridge.conf, chaos-hosts, the device-sim configs, browser panel | no |
 | `/usr/libexec/pidp10/` | `pidp10-engine`, `pidp10-screen`, `pidp10-session`, `pidp10-stop`, `pidp10-teletype`, `pidp10-spawn`, `pidp10-terminal` | no |
 | `/etc/pidp10/pidp10.conf` | operator configuration (`noreplace`) | yes, by you |
 | `/etc/sudoers.d/pidp10` | lets the `pidp10` group attach to the engines' screen sessions (`noreplace`) | no |
@@ -165,9 +166,13 @@ spec cannot resolve by itself.
 
 Subpackages: `pidp10` (engines, helpers, units, config), `pidp10-panel`
 (pinctrl, pidp-gpio-probe, pidp10-test, the `/dev/gpiochip*` udev rule),
-`pidp10-ui` (fonts, icons, `.desktop` files, tilix layout). `pidp10` Recommends
-`pidp10-panel`, because the engine unit asks the probe whether a cabinet is
-attached; both helpers degrade without it.
+`pidp10-clients` (`sty`, `st`, the Teletype sounds and fonts), `pidp10-ui`
+(icons, `.desktop` files, tilix layout). `pidp10` Recommends `pidp10-panel`,
+because the engine unit asks the probe whether a cabinet is attached; both
+helpers degrade without it. `pidp10` Requires `pidp10-clients`, which needs
+nothing else from this package: it is what a desktop or laptop installs to
+reach a PiDP-10 over the network with rpdp (`rpdp con` runs `sty`), without
+pulling in the engines, units, sudoers and system user.
 
 One switch:
 

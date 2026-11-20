@@ -127,6 +127,8 @@ Recommends:     xhost
 Requires:       libgpiod >= 2.0
 Recommends:     libgpiod-utils
 Recommends:     %{name}-panel%{?_isa} = %{version}-%{release}
+# pdp con / pdp sty, and the pidp10-teletype unit, run sty.
+Requires:       %{name}-clients%{?_isa} = %{version}-%{release}
 Suggests:       firewalld
 Suggests:       vt05
 Suggests:       tek4010
@@ -160,6 +162,23 @@ multiplexing loop as a self-test, and run the cabinet bring-up test
 (pidp10-test). The udev rule that adds the /dev/gpiochip node of the
 Raspberry Pi expansion header to the pidp10 group ships here.
 
+%package clients
+Summary:        Teletype Model 33 terminal emulator (sty) and st, from the PiDP-10
+# sty33 and st are MIT; the Teletype recordings are CC-BY-SA-4.0. The two
+# fonts carry no license statement in the tree. FIXME: unreviewed.
+License:        MIT AND CC-BY-SA-4.0
+# Both connect to a PDP-10's console with telnet (sty -e telnet HOST 1025).
+Recommends:     telnet
+
+%description clients
+sty, a terminal that looks and sounds like a Teletype Model 33 (the PiDP-10's
+"noisy and slow" console), and st, the plain suckless terminal it is built
+from, with the Teletype font and the recorded Teletype sounds.
+
+Nothing here needs the simulator: this is the package to install on a desktop
+or laptop that uses a PiDP-10 elsewhere on the network, for example through
+rpdp ("rpdp con" runs sty).
+
 %package ui
 Summary:        Desktop integration for the PiDP-10 terminals
 BuildArch:      noarch
@@ -181,7 +200,7 @@ Icons, fonts, Tilix layout and .desktop files for the operator terminals
 %install
 %make_install PREFIX=%{_prefix}
 install -Dm 0644 src/sty33/sounds/README.md \
-    %{buildroot}%{_licensedir}/%{name}/README.sounds
+    %{buildroot}%{_licensedir}/%{name}-clients/README.sounds
 
 # The product ("kiosk") build boots the cabinet out of the box. It only edits
 # preset files: a package must not run systemctl enable on someone's machine,
@@ -242,15 +261,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 
 %files
 %license README.md
-# The .wav samples' CC-BY-SA-4.0 text; placed under this name in %%install
-# so it does not collide with the top-level README.md.
-%license %{_licensedir}/%{srcname}/README.sounds
 %doc packaging/README.md
 %dir %{_datadir}/%{srcname}
 %dir %{_datadir}/%{srcname}/conf
 %{_datadir}/%{srcname}/conf/*
-%dir %{_datadir}/%{srcname}/sounds
-%{_datadir}/%{srcname}/sounds/*
 %{_bindir}/pdp10-ka
 %{_bindir}/pdp10-ki
 %{_bindir}/pdp10-kl
@@ -260,9 +274,6 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %{_bindir}/pdpcontrol
 %{_mandir}/man1/pdp.1*
 %{_mandir}/man1/pdpcontrol.1*
-%{_mandir}/man1/st.1*
-%{_bindir}/sty
-%{_bindir}/st
 %{_bindir}/scansw10
 %{_bindir}/pidp10-fetch-images
 %dir %{_libexecdir}/%{srcname}
@@ -304,6 +315,20 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %{_udevrulesdir}/99-pidp10.rules
 %doc src/utils/pinctrl/README.md
 
+%files clients
+%license src/sty33/LICENSE
+# The .wav samples' CC-BY-SA-4.0 text; placed under this name in %%install
+# so it does not collide with the top-level README.md.
+%license %{_licensedir}/%{name}-clients/README.sounds
+%{_bindir}/sty
+%{_bindir}/st
+%{_mandir}/man1/st.1*
+%dir %{_datadir}/%{srcname}
+%dir %{_datadir}/%{srcname}/sounds
+%{_datadir}/%{srcname}/sounds/*
+# sty and st draw in the TELETYPE 1945-1985 font.
+%{_datadir}/fonts/%{srcname}
+
 %files ui
 %{_userunitdir}/pidp10-console.service
 %{_userunitdir}/pidp10-teletype.service
@@ -318,7 +343,6 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %{_datadir}/icons/hicolor/48x48/apps/telcon.png
 %{_datadir}/icons/hicolor/48x48/apps/vt52.png
 %{_datadir}/icons/hicolor/scalable/apps/*.svg
-%{_datadir}/fonts/%{srcname}
 %{_datadir}/%{srcname}/view.json
 %{_datadir}/%{srcname}/pidp10tilix.conf
 
