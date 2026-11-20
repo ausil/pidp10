@@ -38,6 +38,14 @@ MANDIR        ?= $(PREFIX)/share/man
 FONTSDBIR     ?= $(PREFIX)/share/fonts/pidp10
 COMPLETIONDIR ?= $(PREFIX)/share/bash-completion/completions
 STATEDIR      ?= /var/lib/pidp10
+# The system directories (boot scripts, and the images the boot scripts attach)
+# live in the state tree, not in $(DATADIR). Not a stylistic choice: every boot
+# script opens with `cd systems/<name>`, which simh resolves relative to its cwd
+# (= $(STATEDIR)), so the script and the disk images it attaches have to sit in
+# one directory - and pidp10-fetch-images unpacks the images into exactly that
+# directory. Two trees, one directory: the only split that works is scripts and
+# images together, which makes the directory writable by the engine account.
+SYSTEMSDIR    ?= $(STATEDIR)/systems
 
 BUILDDIR      ?= build
 # WITH_STY=no skips the two X11/SDL terminals (sty/st need SDL2 and X11).
@@ -66,7 +74,17 @@ ENGINES        := pdp10-ka pdp10-ki pdp10-kl pdp10-ks pdp6
 # to have them rewritten here rather than discovering them at run time, which
 # is what a "paths" shell library is for in other projects and what makes
 # `systemctl cat` and `pdp` agree without either hunting for a config file.
+# The systems rules have to come before the two that match /var/lib/pidp10 and
+# /usr/share/pidp10 as prefixes, or a build with a custom SYSTEMSDIR rewrites
+# the systems paths into the state or data root. The /usr/share spellings match
+# nothing in the tree today (the system directories moved to the state tree);
+# they are kept so a file that still names the pre-move location - copied out of
+# an old boot script or an upstream README - is redirected with it instead of
+# being installed pointing at a directory this package does not create.
 SUBST = sed -e 's|/usr/libexec/pidp10|$(LIBEXECDIR)|g' \
+            -e 's|/var/lib/pidp10/systems|$(SYSTEMSDIR)|g' \
+            -e 's|$(PREFIX)/share/pidp10/systems|$(SYSTEMSDIR)|g' \
+            -e 's|/usr/share/pidp10/systems|$(SYSTEMSDIR)|g' \
             -e 's|$(PREFIX)/share/pidp10|$(DATADIR)|g' \
             -e 's|/usr/share/pidp10|$(DATADIR)|g' \
             -e 's|/var/lib/pidp10|$(STATEDIR)|g' \
@@ -144,14 +162,14 @@ install:
 	    echo "make install: not built in $(B):$$missing - run 'make' first" >&2; \
 	    [ "$${PIDP10_ALLOW_PARTIAL:-}" = 1 ] || exit 1; \
 	fi
-	install -d $(DESTDIR)$(BINDIR) $(DESTDIR)$(LIBEXECDIR) $(DESTDIR)$(DATADIR)/systems \
-	    $(DESTDIR)$(DATADIR)/conf $(DESTDIR)$(DATADIR)/sounds \
+	install -d $(DESTDIR)$(BINDIR) $(DESTDIR)$(LIBEXECDIR) $(DESTDIR)$(STATEDIR) \
+	    $(DESTDIR)$(SYSTEMSDIR) $(DESTDIR)$(DATADIR)/conf $(DESTDIR)$(DATADIR)/sounds \
 	    $(DESTDIR)$(SYSCONFDIR)/pidp10 $(DESTDIR)$(UNITDIR) $(DESTDIR)$(USERUNITDIR) \
 	    $(DESTDIR)$(PRESETDIR) $(DESTDIR)$(USERPRESETDIR) $(DESTDIR)$(SYSUSERSDIR) \
 	    $(DESTDIR)$(TMPFILESDIR) $(DESTDIR)$(UDEVDIR) $(DESTDIR)$(LOGINDDIR) \
 	    $(DESTDIR)$(FIREWALLDIR) $(DESTDIR)$(ICONSDIR)/48x48/apps \
 	    $(DESTDIR)$(ICONSDIR)/scalable/apps $(DESTDIR)$(APPSDIR) \
-	    $(DESTDIR)$(FONTSDBIR) $(DESTDIR)$(COMPLETIONDIR)
+	    $(DESTDIR)$(FONTSDBIR) $(DESTDIR)$(COMPLETIONDIR) $(DESTDIR)$(MANDIR)/man1
 	install -m 0755 $(addprefix $(B)/,$(ENGINES)) $(DESTDIR)$(BINDIR)/
 	install -m 0755 $(B)/pinctrl $(B)/scansw10 $(B)/pidp10-test $(DESTDIR)$(BINDIR)/
 	@# pidp-gpio-probe is only built when libgpiod is present.
@@ -171,17 +189,25 @@ install:
 	    chmod 0755 $(DESTDIR)$(BINDIR)/$$(basename $$u); done
 	$(SUBST) packaging/pidp10-fetch-images.sh > $(DESTDIR)$(BINDIR)/pidp10-fetch-images
 	chmod 0755 $(DESTDIR)$(BINDIR)/pidp10-fetch-images
-	@# read-only data: boot scripts (the images themselves are fetched into
-	@# $(STATEDIR) by pidp10-fetch-images, never shipped here)
+	@# The system directories: the boot scripts (the ~2 GB of disk/tape images
+	@# they attach are fetched into the same directories by
+	@# pidp10-fetch-images, never shipped here). Installed into $(SYSTEMSDIR)
+	@# rather than $(DATADIR) because a boot script and the images it attaches
+	@# are one directory: simh resolves `attach rp0.dsk` against its cwd, and
+	@# every boot script starts with `cd systems/<name>`. The directories are
+	@# therefore written to at run time and have to belong to the engine
+	@# account; the spec does that with %%attr, and the tmpfiles fragment
+	@# (install/fedora/tmpfiles.d) repairs it after a plain `make install`,
+	@# which cannot set an owner on a build host that has no pidp10 user.
 	for s in systems/*/; do \
 	    n=$$(basename $$s); \
 	    [ -f $$s/boot.pi ] || [ -f $$s/boot.pidp ] || continue; \
-	    install -d $(DESTDIR)$(DATADIR)/systems/$$n; \
+	    install -d -m 0755 $(DESTDIR)$(SYSTEMSDIR)/$$n; \
 	    for f in $$s*.pi $$s*.pidp $$s*.txt $$s*.pdf; do \
 	        [ -f "$$f" ] || continue; \
-	        install -m 0644 $$f $(DESTDIR)$(DATADIR)/systems/$$n/$$(basename $$f); \
+	        install -m 0644 $$f $(DESTDIR)$(SYSTEMSDIR)/$$n/$$(basename $$f); \
 	    done; done
-	install -m 0644 systems/selections $(DESTDIR)$(DATADIR)/systems/
+	install -m 0644 systems/selections $(DESTDIR)$(SYSTEMSDIR)/
 	@# data the helpers and the terminals read at run time. Installed unguarded:
 	@# a missing file has to fail the build rather than leave a cabinet without
 	@# its Teletype sounds or its Chaosnet config. These live with what uses them
@@ -239,8 +265,13 @@ install:
 	@# man pages for the front doors; no-manual-page-for-binary is
 	@# filtered only for the engines and panel tools, whose interface is
 	@# the units
-	install -Dm 0644 man/pdp.1 $(DESTDIR)$(MANDIR)/man1/pdp.1
-	install -Dm 0644 man/pdpcontrol.1 $(DESTDIR)$(MANDIR)/man1/pdpcontrol.1
+	@# The pages name the layout the helpers were just rewritten to, so they go
+	@# through $(SUBST) like everything else that states a path: a page that
+	@# tells the operator to edit a file that does not exist in this build is
+	@# worse than no page.
+	$(SUBST) man/pdp.1 > $(DESTDIR)$(MANDIR)/man1/pdp.1
+	$(SUBST) man/pdpcontrol.1 > $(DESTDIR)$(MANDIR)/man1/pdpcontrol.1
+	chmod 0644 $(DESTDIR)$(MANDIR)/man1/pdp.1 $(DESTDIR)$(MANDIR)/man1/pdpcontrol.1
 	@# st's own upstream page; sty is st with Teletype emulation and no page
 	@# of its own (see the no-manual-page filter).
 	install -Dm 0644 src/st-0.9.2/st.1 $(DESTDIR)$(MANDIR)/man1/st.1

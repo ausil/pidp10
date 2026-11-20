@@ -74,8 +74,11 @@ CPUWeight=1000
 CPUAffinity=0-3
 
 # --- filesystem ---------------------------------------------------------
-# The boot scripts cd into $PIDP10_HOME/systems/<sys> and simh writes disk
-# images + logs under the tree, so the tree has to be writable.
+# The system directories (boot scripts plus the disk/tape images they attach)
+# are /var/lib/pidp10/systems/<sys>, and simh writes its images and logs under
+# the tree, so the whole state tree has to be writable. That includes the boot
+# scripts: they are state, not /usr/share data, because simh resolves every
+# attach relative to the `cd systems/<name>` the scripts start with.
 ReadWritePaths=/var/lib/pidp10 /var/log/pidp10
 
 [Install]

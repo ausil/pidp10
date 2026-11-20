@@ -25,6 +25,7 @@ set -uo pipefail
 : "${PIDP10_PREFIX:=/usr/share/pidp10}"
 : "${PIDP10_LIBEXEC:=/usr/libexec/pidp10}"
 : "${PIDP10_STATE:=/var/lib/pidp10}"
+: "${PIDP10_SYSTEMS:=$PIDP10_STATE/systems}"
 : "${PIDP10_SELECTIONS:=$PIDP10_SYSTEMS/selections}"
 : "${PIDP10_CONSOLE_PORT:=1025}"
 

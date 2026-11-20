@@ -17,8 +17,12 @@
 #   pidp10-fetch-images its tops20
 #   pidp10-fetch-images --state /var/lib/pidp10 --only its
 #
-# Images land in $PIDP10_STATE/systems/<name>/, which is exactly where the
-# boot scripts expect them (the units chdir there before starting simh).
+# Images land in $PIDP10_STATE/systems/<name>/, which is the directory the boot
+# scripts of that name are installed into: the units chdir to the state tree,
+# each script opens with `cd systems/<name>`, and every attach after that is
+# relative to it. Script and image are one directory - which is why the scripts
+# ship there too (SYSTEMSDIR in the top-level Makefile), why the directory is
+# owned by the engine account, and why a root-owned one makes this tool fail.
 #
 # Run it as the user that owns the state dir - normally pidp10:
 #   sudo -u pidp10 pidp10-fetch-images --all

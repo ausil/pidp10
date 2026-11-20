@@ -8,9 +8,9 @@
   this, other machines running "rpdp tvcon" or "rpdp vt52" just hang, which is
   the single most common "it worked on Raspbian" complaint.
 
-  Sources of these numbers: systems/*/boot.pidp (set cons/at -u line=..),
-  cbridge.conf in /usr/share/pidp10/conf (chudp 44041) and gateway.sh from
-  Chaosnet/chaosnet-tools (44042/3150).
+  Sources of these numbers: /var/lib/pidp10/systems/*/boot.pidp (set cons/at
+  -u line=..), cbridge.conf in /usr/share/pidp10/conf (chudp 44041) and
+  gateway.sh from Chaosnet/chaosnet-tools (44042/3150).
 
   To enable: install the file, reload firewalld, and add "pidp10" to the
   default zone permanently. The firewall-cmd invocations are described rather

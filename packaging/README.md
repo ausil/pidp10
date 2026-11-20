@@ -15,17 +15,44 @@ state in `/var/lib`, services managed by systemd, and no `chmod +s` anywhere.
 | `/usr/bin/pidp10-fetch-images` | fetches the OS/media images into the state tree (the package ships none) | no |
 | `/usr/bin/{pinctrl,pidp-gpio-probe,pidp10-test}` | GPIO inspection, "is a cabinet attached?", cabinet bring-up test (`pidp10-panel`) | no |
 | `/usr/bin/{cbridge,tv11,tvcon,imlac,vt05,vt50,vt52,dp3300,dm2500,gecon,tek4010,supdup,gw}` | the device sims the boot scripts call - **not from this package**: each has its own upstream and its own spec (see "The device sims") | no |
-| `/usr/share/pidp10/systems/` | `boot.pi` / `boot.pidp` scripts and read-only system data | no |
 | `/usr/share/pidp10/{conf,sounds,view.json}` | cbridge.conf, chaos-hosts, `.wav` samples, browser panel | no |
 | `/usr/libexec/pidp10/` | `pidp10-engine`, `pidp10-teletype`, `pidp10-spawn`, `pidp10-stop`, `pidp10-terminal` | no |
 | `/etc/pidp10/pidp10.conf` | operator configuration (`noreplace`) | yes, by you |
-| `/var/lib/pidp10/` | **cwd of the simulator**: disk/tape images, `systems/<name>/` | yes |
+| `/var/lib/pidp10/` | **cwd of the simulator**: disk/tape images, logs | yes |
+| `/var/lib/pidp10/systems/<name>/` | the boot scripts (`boot.pi` / `boot.pidp`), `selections`, **and the images they attach** | yes - the scripts ship with the package, the images are fetched |
 | `/var/lib/pidp10/logs/`, `/var/log/pidp10/` | console and cbridge logs | yes |
 
-The split that matters: the boot scripts are read-only data and live in
-`/usr/share`, but the engine `cd`s to `/var/lib/pidp10` before running them, so
-every `attach ./rp03.2` lands in the state tree. An upgrade can never overwrite
-your ITS pack, and `ProtectSystem=strict` becomes possible.
+The split that matters: everything the simulator writes lives in
+`/var/lib/pidp10`, and the engine `cd`s there before running a boot script, so
+`ProtectSystem=strict` becomes possible and an upgrade can never overwrite your
+ITS pack. The boot scripts are in that tree rather than in `/usr/share` for one
+reason: they are not separable from the images. Each starts with
+`cd systems/<name>`, simh resolves every `attach` relative to that directory,
+and `pidp10-fetch-images` unpacks the media into it - so script and image are
+one directory, and that directory has to be writable by the engine account.
+Everything else the software only reads (`conf/`, `sounds/`, `view.json`, the
+desktop entries) stays in `/usr/share`.
+
+A consequence of putting the boot scripts in the state tree: they are package
+files, so an upgrade replaces them (they are not `%config` - Fedora accepts no
+`%config` outside `/etc`, and this package keeps `/usr` stateless). To customise
+a boot durably, make a system of your own and point the selections table at it:
+
+```sh
+cp -a /var/lib/pidp10/systems/its /var/lib/pidp10/systems/myits
+$EDITOR /var/lib/pidp10/systems/myits/boot.pi
+# start from the shipped table - an unlisted number falls back to
+# hills-blinky, so replacing the file wholesale loses the other systems
+cp /var/lib/pidp10/systems/selections /etc/pidp10/selections
+printf '0010\tmyits\n' >> /etc/pidp10/selections   # pdpcontrol start 8
+```
+
+and set `PIDP10_SELECTIONS=/etc/pidp10/selections` in `/etc/pidp10/pidp10.conf`:
+`pidp10-engine` and `pdpcontrol` both source that file and the units load it
+through `EnvironmentFile=`, so one line covers `systemctl start pidp10@1` and
+`pdpcontrol start 1`. It is the one path the config file is allowed to name -
+unlike `PIDP10_PREFIX`/`PIDP10_STATE` it is a file the operator owns, not the
+layout the build was given.
 
 ## Where the paths come from
 
@@ -37,10 +64,10 @@ make install DESTDIR=/tmp/root PREFIX=/usr LIBEXECDIR=... DATADIR=...
 ```
 
 It owns `PREFIX BINDIR LIBEXECDIR DATADIR SYSCONFDIR UNITDIR
-SYSUSERSDIR TMPFILESDIR UDEVDIR STATEDIR ...` and rewrites them into the units,
-the helpers and the front doors at install time (`SUBST`), the same way the
-`-DPIDP10_SOUNDS_DIR=...` define puts the sample directory into the Teletype at
-compile time.
+SYSUSERSDIR TMPFILESDIR UDEVDIR STATEDIR SYSTEMSDIR ...` and rewrites them into
+the units, the helpers and the front doors at install time (`SUBST`), the same
+way the `-DPIDP10_SOUNDS_DIR=...` define puts the sample directory into the
+Teletype at compile time.
 
 There is deliberately **no runtime path-resolution library**. An earlier
 revision shipped `pidp10-paths.sh`, sourced by every helper after a three-candidate
@@ -54,12 +81,17 @@ The consequences worth knowing:
 
 * A helper that needs a default writes `: "${PIDP10_STATE:=/var/lib/pidp10}"`.
   Six lines of that duplication is cheaper than one file six things have to
-  find, and it cannot be out of date.
+  find, and it cannot be out of date. `PIDP10_SYSTEMS` defaults to
+  `$PIDP10_STATE/systems` *derived from* `PIDP10_STATE`, so moving the state
+  tree moves the systems with it.
 * `/etc/pidp10/pidp10.conf` holds **policy only** - `PIDP10_BOOT`,
-  `PIDP10_PANEL`, `PIDP10_CONSOLE_PORT`. Layout variables in it would outrank
-  the package and send a foreign-prefix build looking in `/usr`. Move the state
+  `PIDP10_PANEL`, `PIDP10_CONSOLE_PORT`, and `PIDP10_SELECTIONS` (which
+  selections table to read: a file the operator owns, so naming it is policy,
+  not layout). The layout variables are not in it: they would outrank the
+  package and send a foreign-prefix build looking in `/usr`. Move the state
   directory with a unit drop-in (`Environment=PIDP10_STATE=...`), which at
-  least shows up in `systemctl cat`.
+  least shows up in `systemctl cat`; `PIDP10_SYSTEMS` follows it, defaulting to
+  `$PIDP10_STATE/systems`.
 * `install` refuses to run on an incomplete `build/`. Nothing is installed from
   `src/`: the panel tools are built by `src/utils/pinctrl`'s cmake, the engines
   by simh's makefile and the terminals by their own makefiles, all into
@@ -161,7 +193,7 @@ instead of setuid/setcap; RT priority comes from
 `/usr/lib/systemd/logind.conf.d/60-pidp10-rt.conf`.
 
 Boot numbers are the octal switch-register values (`0200` = TOPS-20), and
-`systems/selections` maps them to a system directory.
+`/var/lib/pidp10/systems/selections` maps them to a system directory.
 
 ## The device sims
 

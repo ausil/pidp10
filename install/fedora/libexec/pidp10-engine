@@ -26,8 +26,14 @@ set -euo pipefail
 : "${PIDP10_PREFIX:=/usr/share/pidp10}"
 : "${PIDP10_LIBEXEC:=/usr/libexec/pidp10}"
 : "${PIDP10_STATE:=/var/lib/pidp10}"
-: "${PIDP10_SYSTEMS:=$PIDP10_PREFIX/systems}"
+# The system directories live with the images, not with the read-only data:
+# every boot script starts with `cd systems/<name>` and simh resolves every
+# attach relative to its cwd, so script and image are one directory. That
+# directory is $(PIDP10_STATE)/systems, which is also where
+# pidp10-fetch-images unpacks the media.
+: "${PIDP10_SYSTEMS:=$PIDP10_STATE/systems}"
 : "${PIDP10_SELECTIONS:=$PIDP10_SYSTEMS/selections}"
+: "${PIDP10_CONF_DATA:=$PIDP10_PREFIX/conf}"
 : "${PIDP10_CONSOLE_PORT:=1025}"
 
 PIDP10_PANEL=${PIDP10_PANEL:-auto}
@@ -109,9 +115,10 @@ sys_oct=$(printf '%04o' "$boot_number")
 sel=$(awk -v n="$sys_oct" '$1 == n { print $2; found=1; exit }
                           END { if (!found) print "hills-blinky" }' < "$SELECTIONS")
 
-# The boot script is read-only data; the images it attaches live in the state
-# tree and may legitimately be missing until pidp10-fetch-images has run, so
-# only the former is required to be present here.
+# The boot script and the images it attaches are the same directory (see
+# PIDP10_SYSTEMS above), so a missing directory means the selection table
+# names a system that is not installed; a missing image only means
+# pidp10-fetch-images has not run yet, which is not fatal here.
 bootdir=$PIDP10_SYSTEMS/$sel
 [ -d "$bootdir" ] || die "no such system directory: $bootdir"
 
@@ -144,15 +151,15 @@ bootfile=$bootdir/boot$ext
 
 # Where the simulator runs. The boot scripts do `cd systems/<name>` relative to
 # here, so this is what makes the images in the STATE tree the ones that get
-# attached - which is the whole point of splitting /usr/share from /var/lib.
-statedir=$(pidp10_system_dir "$sel")
-mkdir -p "$statedir" 2>/dev/null || true
+# attached - and it is why the boot scripts are installed there too: the file
+# simh is handed and the directory it cd's into are one and the same tree.
+statedir=$PIDP10_STATE
 
 # ---------------------------------------------------------------------------
 # 5. tell the boot scripts that cbridge/tv11 are supervised elsewhere
 # ---------------------------------------------------------------------------
 export PIDP10_MANAGED=1
-export PIDP10_CONSOLE_PORT PIDP10_PANEL PIDP10_GPIO_CHIP
+export PIDP10_CONSOLE_PORT PIDP10_PANEL PIDP10_GPIO_CHIP PIDP10_CONF_DATA
 
 # The engine itself: from PATH on a packaged system, from the checkout when
 # PIDP10_HOME points at one. A developer runs this from a checkout, where the

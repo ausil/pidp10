@@ -22,7 +22,14 @@
 #     scriptlets here are the systemd macros and nothing else.
 #   * Read-only data in /usr/share, writable state in /var/lib. This is what
 #     makes ProtectSystem=strict usable and lets an upgrade not eat your ITS
-#     disk image.
+#     disk image. The one exception is the system directories: a boot script
+#     and the images it attaches are the same directory (simh resolves every
+#     attach relative to the `cd systems/<name>` the scripts start with, and
+#     pidp10-fetch-images unpacks the media into it), so they are installed to
+#     /var/lib/pidp10/systems and are owned by the engine account. They are not
+#     %%config (Fedora takes none outside /etc), so an upgrade replaces them;
+#     a site-local boot copies the directory and points PIDP10_SELECTIONS at a
+#     table of its own - see packaging/README.md.
 #   * Nothing under /usr is marked %%config. A file in /usr must be replaceable
 #     by an upgrade; an operator who wants a different logind drop-in writes one
 #     in /etc/systemd/logind.conf.d/.
@@ -82,22 +89,13 @@ URL:            https://obsolescence.dev/pdp10
 # plus uncommitted changes to tracked files). Nothing under bin/ is in it: the
 # tree's prebuilt ELFs are not built or installed by this spec at all.
 Source0:        %{srcname}-%{version}-%{srcdate}.tar.gz
-# Same content as install/fedora/sysusers.d/30-pidp10.conf, shipped separately
-# because %%sysusers_create_package has to read it in %%pre, before the files it
-# describes have been unpacked.
 Source1:        30-pidp10.conf
-# Same content as install/fedora/tmpfiles.d/pidp10.conf; staged like Source1
-# because %%tmpfiles_create_package cats %%{SOURCE2} at spec-parse time.
 Source2:        pidp10.conf
 
 BuildRequires:  gcc, gcc-c++, make, cmake, pkgconf-pkg-config
 BuildRequires:  file
 BuildRequires:  desktop-file-utils
 BuildRequires:  systemd-rpm-macros
-# The panel backends: libgpiod is not optional any more. Without it the build
-# still succeeds but the engines can only use gpiomem, which a distribution
-# kernel does not provide - the failure then shows up on the cabinet, not in
-# the build log.
 BuildRequires:  libgpiod-devel >= 2.0
 BuildRequires:  pkgconfig(libgpiod)
 BuildRequires:  readline-devel
@@ -116,23 +114,8 @@ BuildRequires:  freetype-devel
 Requires:       systemd
 Requires:       libgpiod >= 2.0
 Recommends:     libgpiod-utils
-# The engine unit asks pidp-gpio-probe whether a cabinet is attached and
-# (with the panel live) scansw10 which system to boot; both degrade gracefully
-# when pidp10-panel is absent, but a machine with a front panel wants it.
 Recommends:     %{name}-panel%{?_isa} = %{version}-%{release}
 Suggests:       firewalld
-# The AI Lab terminals `pdp` opens and the desktop entries launch, plus the
-# Chaosnet bridge the cbridge unit and the boot scripts call. Each is its own
-# upstream with its own spec (the table in packaging/README.md); suggested,
-# not required: a headless box, or an operator who only ever uses the
-# Teletype, must not be pulled into installing graphics emulators. The names
-# are the upstream package names: the vt05 package provides all six
-# DEC/Datapoint terminals (vt05/vt50/vt52/dp3300/dm2500/gecon), tek4010 the
-# storage tube. imlac, tv11/tvcon and cbridge are named ahead of their specs
-# landing in the same COPR: dnf silently skips a suggested package no
-# enabled repo provides, and tv11/tvcon are one upstream, so either name
-# covers the pair. Absent cbridge the cbridge unit skips by its
-# ConditionPathExists=, which is the honest degraded mode.
 Suggests:       vt05
 Suggests:       tek4010
 Suggests:       imlac
@@ -167,9 +150,6 @@ Raspberry Pi expansion header to the pidp10 group ships here.
 Summary:        Desktop integration for the PiDP-10 terminals
 BuildArch:      noarch
 Requires:       %{name}%{?_isa} = %{version}-%{release}
-# `pdp view` runs inside tilix (its layout file is a tilix profile) and
-# `pdp con`/`telcon`/`tvcon` open an lxterminal; without them the desktop
-# entries launch nothing.
 Recommends:     tilix
 Recommends:     lxterminal
 
@@ -181,17 +161,11 @@ Icons, fonts, Tilix layout and .desktop files for the operator terminals
 %autosetup -n %{srcname}-%{version}
 
 %build
-# The top-level Makefile reads CFLAGS/LDFLAGS from the environment and knows
-# how to hand them to simh's own makefile (which otherwise assembles its own
-# compile line and drops -lm -lpng -lz if it is handed an LDFLAGS=).
 %set_build_flags
 %make_build PREFIX=%{_prefix}
 
 %install
 %make_install PREFIX=%{_prefix}
-# The .wav samples' own licence text (CC-BY-SA-4.0, attribution to Hugh
-# Pyle). Its basename is README.md like the top-level one, so it goes into
-# the licensedir under a distinguishing name or the two collide.
 install -Dm 0644 src/sty33/sounds/README.md \
     %{buildroot}%{_licensedir}/%{name}/README.sounds
 
@@ -212,25 +186,11 @@ sed -i \
 %endif
 
 %check
-# The engines run simh's register sanity check when they are linked; this is
-# the next level up: every engine has to boot, take a command and exit. Q goes
-# in on stdin rather than via -e/-c, which both leave simh at a sim> prompt
-# with no input and hang the build until %%check's timeout. PIDP10_PANEL=sim is
-# what lets this run at all: the builders have no GPIO hardware, so nothing here
-# may open a /dev/gpiochipN - not as a failure and not even as a look. The
-# sim backend exists for exactly this, and the panel tools honour the same
-# declaration by opening nothing rather than by probing and coping.
 export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
 for e in pdp10-ka pdp10-ki pdp10-kl pdp10-ks pdp6; do
     echo q | PIDP10_PANEL=sim timeout 60 build/$e >/dev/null || {
         echo "%check: $e did not boot"; exit 1; }
 done
-# The three probe modes %%check runs must answer from the declaration alone.
-# That is the property the units rely on too: --check runs at every engine
-# start on a machine that may have no panel, no group membership and no
-# business opening someone else's chip. --list is the one mode that would
-# enumerate /dev/gpiochip0..63 - opening a chip is the probe - so under sim it
-# says so and opens nothing, which is also what this line is asserting.
 test "$(PIDP10_PANEL=sim build/pidp-gpio-probe --backend)" = \
      "sim (PIDP10_PANEL=sim)"
 PIDP10_PANEL=sim build/pidp-gpio-probe --pins >/dev/null
@@ -266,8 +226,6 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %systemd_user_postun_with_restart pidp10-console.service \
     pidp10-teletype.service pidp10-tv11.service pidp10-view.service
 
-# No gtk-update-icon-cache scriptlet: the payload is plain PNG/SVG under
-# hicolor, which gtk-update-icon-cache's file triggers already maintain.
 
 %files
 %license README.md
@@ -276,7 +234,6 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %license %{_licensedir}/%{srcname}/README.sounds
 %doc packaging/README.md
 %dir %{_datadir}/%{srcname}
-%{_datadir}/%{srcname}/systems
 %dir %{_datadir}/%{srcname}/conf
 %{_datadir}/%{srcname}/conf/*
 %dir %{_datadir}/%{srcname}/sounds
@@ -288,13 +245,9 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %{_bindir}/pdp6
 %{_bindir}/pdp
 %{_bindir}/pdpcontrol
-# brp-compress gzips man pages, so match both spellings.
 %{_mandir}/man1/pdp.1*
 %{_mandir}/man1/pdpcontrol.1*
 %{_mandir}/man1/st.1*
-# Built from src/: the Teletype and the DECwriter-style terminal, plus the
-# switch reader the engine unit calls. The panel diagnostics (pidp-gpio-probe,
-# pinctrl, pidp10-test) are in pidp10-panel.
 %{_bindir}/sty
 %{_bindir}/st
 %{_bindir}/scansw10
@@ -303,13 +256,6 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %{_libexecdir}/%{srcname}/*
 %{_unitdir}/pidp10-cbridge.service
 %{_unitdir}/pidp10-engine@.service
-# User-scope engine units: pdpcontrol user drives these even on a headless
-# box. The desktop-session units (console, teletype, tv11, view) ship with
-# pidp10-ui, which owns the fonts, icons, desktop entries and terminal
-# Recommends they need; Wants= across the package boundary is a no-op when
-# ui is absent, and the user preset naming a unit that is not installed is
-# silent. The scriptlets above name exactly this payload, and ui's name
-# its own - scriptlets and files must not live in different packages.
 %{_userunitdir}/pidp10.service
 %{_userunitdir}/pidp10@.service
 %{_userunitdir}/pidp10.target
@@ -317,44 +263,38 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %{_userpresetdir}/pidp10.preset
 %{_sysusersdir}/30-pidp10.conf
 %{_tmpfilesdir}/%{srcname}.conf
-# Created by systemd-tmpfiles from the fragment above; %%ghost so the package
-# owns the ownership and mode without owning contents an upgrade must not
-# touch.
 %ghost %dir %attr(0755,pidp10,pidp10) %{_sharedstatedir}/%{srcname}
-%ghost %dir %attr(0755,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems
+%dir %attr(0755,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems
+%attr(0644,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/selections
+%dir %attr(0755,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/hills-blinky
+%attr(0644,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/hills-blinky/*
+%dir %attr(0755,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/its
+%attr(0644,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/its/*
+%dir %attr(0755,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/tops10-603
+%attr(0644,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/tops10-603/*
+%dir %attr(0755,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/tops20
+%attr(0644,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/tops20/*
 %ghost %dir %attr(0755,pidp10,pidp10) /var/log/%{srcname}
 %ghost %dir %attr(0755,pidp10,pidp10) /run/%{srcname}
 %dir %{_sysconfdir}/%{srcname}
 %config(noreplace) %{_sysconfdir}/%{srcname}/pidp10.conf
 %{_prefix}/lib/firewalld/services/%{srcname}.xml
-# Not %%config: /usr must be stateless, and an operator override belongs in
-# /etc/systemd/logind.conf.d/.
 %{_prefix}/lib/systemd/logind.conf.d/60-pidp10-rt.conf
 
 %files panel
 %{_bindir}/pinctrl
 %{_bindir}/pidp-gpio-probe
-# Cabinet bring-up test: random LED patterns plus a report on which switches
-# answer. It needs no privileges, so it belongs with the other panel tools
-# rather than in the package a headless box installs.
 %{_bindir}/pidp10-test
 %{_datadir}/bash-completion/completions/pinctrl
 %{_udevrulesdir}/99-pidp10.rules
-# The upstream pinctrl README (RPi-specific but the only description of what
-# the tool's modes mean); answers no-documentation with real text.
 %doc src/utils/pinctrl/README.md
 
 %files ui
-# The desktop-session user units; the scriptlets that manage them are above
-# (the note in the main %%files explains the split).
 %{_userunitdir}/pidp10-console.service
 %{_userunitdir}/pidp10-teletype.service
 %{_userunitdir}/pidp10-tv11.service
 %{_userunitdir}/pidp10-view.service
 %{_datadir}/applications/*.desktop
-# Named per install, not a *.png glob: a glob forgives a wrong file name
-# (con-48.png sat under 48x48/apps unnoticed for a whole packaging
-# revision, and the hicolor theme never shows a layer it cannot name).
 %{_datadir}/icons/hicolor/48x48/apps/con.png
 %{_datadir}/icons/hicolor/48x48/apps/imlac.png
 %{_datadir}/icons/hicolor/48x48/apps/knight.png
@@ -367,14 +307,15 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %{_datadir}/%{srcname}/view.json
 %{_datadir}/%{srcname}/pidp10tilix.conf
 
-# The entries carry the plain 4.1.0-1 version: the snapshot identity lives in
-# Release and cannot be known by a hand-written entry (rpmlint's
-# incoherent-version-in-changelog is filtered for exactly this; the
-# alternative would be editing this file on every build).
 %changelog
 * Wed Nov 04 2026 Dennis Gilmore <dennis@ausil.us> - 4.1.0-1
 - %%check boots every engine and runs the panel probe; scriptlets are the
-  systemd macros; state dirs are %%ghost; no %%config under /usr; snapshot
-  Release from git.
+  systemd macros; the runtime-only state dirs are %%ghost while the packaged
+  system directories are real files owned by pidp10; no %%config under /usr;
+  snapshot Release from git.
+- The system directories (boot scripts plus the images they attach) install to
+  /var/lib/pidp10/systems and are owned by pidp10, not to /usr/share: simh
+  resolves every attach relative to the `cd systems/<name>` each boot script
+  starts with, so script and image cannot live in two trees.
 - First packaged form: FHS layout, services via presets, no setuid/setcap,
   media images fetched explicitly by pidp10-fetch-images.
