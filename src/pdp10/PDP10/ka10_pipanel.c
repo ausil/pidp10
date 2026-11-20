@@ -794,15 +794,56 @@ vm_post(t_bool from_scp)
 {
 }
 
+static int panel_started = 0;
+
 /*
  * Start panel thread, and install console read functions.
+ *
+ * Not every engine that is built with the panel code should drive a panel:
+ *
+ *   PIDP10_PANEL=none   no panel at all. The engine scripts document and pass
+ *                       this value, but the panel library only knows
+ *                       gpiod|gpiomem|sim|auto and rejected it, which failed
+ *                       the CPU reset. Handled here instead.
+ *
+ *   PDP6 builds         the PiDP-10's panel belongs to the KA10. A PDP-6
+ *                       running next to it (pidp10-pdp6.service) must not open
+ *                       the same GPIO lines, so it drives a panel only when
+ *                       PIDP10_PDP6_PANEL names a backend (gpiod, gpiomem,
+ *                       sim or auto). This is its own variable because
+ *                       /etc/pidp10/pidp10.conf sets PIDP10_PANEL for the
+ *                       KA10, and a unit's EnvironmentFile= overrides its
+ *                       Environment=, so the unit could not turn it off.
+ *
+ * Without a panel, simh's own command-line reader is used (no vm_read).
  */
 t_stat pi_panel_start(void)
 {
     t_stat    r;
+    const char *want = getenv("PIDP10_PANEL");
+
+#if PDP6
+    want = getenv("PIDP10_PDP6_PANEL");
+    if (want == NULL || *want == '\0')
+        want = "none";
+    else if (strcmp(want, "none") != 0)
+        setenv("PIDP10_PANEL", want, 1);   /* what pidp_panel_open() reads */
+#endif
+    if (want != NULL && strcmp(want, "none") == 0) {
+        sim_messagef(SCPE_OK, "PiDP-10 front panel disabled (%s=none)\n",
+#if PDP6
+                     "PIDP10_PDP6_PANEL"
+#else
+                     "PIDP10_PANEL"
+#endif
+                     );
+        return SCPE_OK;
+    }
 
     /* start up multiplexing thread */
     r = gpio_mux_thread_start();
+    if (r == SCPE_OK)
+        panel_started = 1;
     sim_vm_read = &vm_read;
     sim_vm_post = &vm_post;
     return r;
@@ -813,6 +854,8 @@ t_stat pi_panel_start(void)
  */
 void pi_panel_stop(void)
 {
+    if (!panel_started)             /* PIDP10_PANEL=none, or a PDP-6 */
+        return;
     if (blink_thread_terminate == 0) {
         blink_thread_terminate=1;
         sim_vm_read = NULL;

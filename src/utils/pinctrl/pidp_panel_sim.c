@@ -27,6 +27,7 @@ static uint32_t          reported[PIDP_PANEL_LED_ROWS];
 static int               open_count;
 static unsigned long long frames;
 static time_t            last_report;
+static int               trace;         /* PIDP10_PANEL_TRACE */
 
 static int sim_open(const pidp_panel_config *c)
 {
@@ -36,8 +37,13 @@ static int sim_open(const pidp_panel_config *c)
 	last_report = time(NULL);
 	memset(row_leds, 0, sizeof(row_leds));
 	memset(reported, 0, sizeof(reported));
+	{
+		const char *t = getenv("PIDP10_PANEL_TRACE");
+		trace = (t != NULL && *t != '\0' && strcmp(t, "0") != 0);
+	}
 	fprintf(stderr, "pidp_panel: SIMULATED front panel (no GPIO hardware). "
-	                "Buttons do nothing; use the simh console instead.\n");
+	                "Buttons do nothing; use the simh console instead.%s\n",
+	        trace ? "" : " (PIDP10_PANEL_TRACE=1 prints the lamps.)");
 	return 0;
 }
 
@@ -60,12 +66,16 @@ static void sim_row_write(int row, uint32_t leds)
 	pidp_panel_delay(cfg.gap_ns);
 
 	frames++;
+	if (!trace)
+		return;
 	now = time(NULL);
-	/* Journal-friendly: an identical picture is not news, so print on change
-	 * (at most once a second, which is what makes this usable as a virtual
-	 * panel while watching `journalctl -f`) plus a liveness line once a
-	 * minute that also carries the multiplexing rate. The point is to prove
-	 * the loop runs and how fast, not to fill the journal. */
+	/* Opt-in (PIDP10_PANEL_TRACE=1): an identical picture is not news, so
+	 * print on change (at most once a second, which makes this usable as a
+	 * virtual panel) plus a liveness line once a minute that also carries the
+	 * multiplexing rate. Off by default because stderr is the simh console:
+	 * the engines run in screen sessions, and a status line every second
+	 * scrolled through the operator's terminal (and, with the terminal in
+	 * raw mode, staircased across it). */
 	if (now != last_report &&
 	    (memcmp(row_leds, reported, sizeof(row_leds)) != 0 ||
 	     now - last_report >= 60)) {
