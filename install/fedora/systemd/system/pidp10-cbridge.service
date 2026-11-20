@@ -42,6 +42,11 @@ PrivateTmp=no
 # Hardening that still lets cbridge bind its UDP port and write
 # /tmp/chaos_stream. If a future cbridge needs more, prefer loosening
 # ReadWritePaths over turning everything off.
+#
+# /tmp, not /tmp/chaos_stream: ReadWritePaths= bind-mounts paths that exist
+# when the unit starts, and the socket only exists once cbridge has made it.
+# Naming it failed every start with status=226/NAMESPACE; it also could not
+# have worked, since creating the socket needs /tmp itself writable.
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
@@ -50,7 +55,7 @@ ProtectKernelTunables=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
-ReadWritePaths=/var/lib/pidp10 /tmp/chaos_stream
+ReadWritePaths=/var/lib/pidp10 /tmp
 
 [Install]
 WantedBy=multi-user.target
