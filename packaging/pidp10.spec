@@ -381,8 +381,13 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 - Engine: refuse to boot a system whose disk or tape images are missing or
   empty, and say which pidp10-fetch-images to run; the boot scripts attach
   their media with "at -e" so simh no longer creates empty images
-- Require pidp10-ui, which carries pidp10-tv11.service; drop %%{?_isa} from
-  the noarch -ui package's requirement on pidp10
+- Require pidp10-ui; drop %%{?_isa} from the noarch -ui package's
+  requirement on pidp10
+- Run tv11 as a system unit, pidp10-tv11@.service, started and stopped with
+  the engine instance and waiting for ITS's TEN11 listener (was a user unit
+  in -ui that a cabinet without a desktop login never started); drop
+  pdpcontrol's tv11 restart; require iproute; open tv11's port 11100 in the
+  firewalld service
 
 * Fri Nov 20 2026 Dennis Gilmore <dennis@ausil.us> - 4.1.0-3.20261106
 - Recommend chaosnet-bridge (was a Suggests on cbridge, which nothing provides)
