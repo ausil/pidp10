@@ -134,6 +134,10 @@ Recommends:     libgpiod-utils
 Recommends:     %{name}-panel%{?_isa} = %{version}-%{release}
 # pdp con / pdp sty, and the pidp10-teletype unit, run sty.
 Requires:       %{name}-clients%{?_isa} = %{version}-%{release}
+# The operator side: pidp10-tv11.service (ITS says "TV 11 WENT DOWN" without
+# it), the console/teletype/view user units, the .desktop files and icons.
+# noarch, so no %%{?_isa}.
+Requires:       %{name}-ui = %{version}-%{release}
 # ITS's Chaosnet (pidp10-cbridge.service). Recommended, not required: the unit
 # is skipped without /usr/bin/cbridge, and ITS boots without Chaosnet.
 Recommends:     chaosnet-bridge
@@ -196,7 +200,9 @@ rpdp ("rpdp con" runs sty).
 %package ui
 Summary:        Desktop integration for the PiDP-10 terminals
 BuildArch:      noarch
-Requires:       %{name}%{?_isa} = %{version}-%{release}
+# Not %%{?_isa}: in a noarch package it expands to the architecture it was
+# built on, and the package could then only be installed there.
+Requires:       %{name} = %{version}-%{release}
 Recommends:     tilix
 Recommends:     lxterminal
 

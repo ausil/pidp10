@@ -168,7 +168,9 @@ spec cannot resolve by itself.
 Subpackages: `pidp10` (engines, helpers, units, config), `pidp10-panel`
 (pinctrl, pidp-gpio-probe, pidp10-test, the `/dev/gpiochip*` udev rule),
 `pidp10-clients` (`sty`, `st`, the Teletype sounds and fonts), `pidp10-ui`
-(icons, `.desktop` files, tilix layout). `pidp10` Recommends `pidp10-panel`,
+(the user units, among them `pidp10-tv11.service`, the Knight TV server ITS
+expects; icons, `.desktop` files, tilix layout). `pidp10` Requires
+`pidp10-ui`, so a cabinet always has tv11's unit. `pidp10` Recommends `pidp10-panel`,
 because the engine unit asks the probe whether a cabinet is attached; both
 helpers degrade without it. `pidp10` Requires `pidp10-clients`, which needs
 nothing else from this package: it is what a desktop or laptop installs to
