@@ -82,11 +82,12 @@ at imp nat:tcp=2123:10.0.2.15:23,tcp=2121:10.0.2.15:21,tcp=2195:10.0.2.15:95
 #set imp host=10.3.0.6
 #at imp tap:tap0
 #---------------------------
-at ptr ./dskdmp.rim
-at dpa0 ./rp03.2
-at dpa1 ./rp03.3
-at dpa2 ./rp03.0
-at dpa3 ./rp03.1
+; -e: the image must exist. Without it simh creates an empty file and boots that.
+at -e ptr ./dskdmp.rim
+at -e dpa0 ./rp03.2
+at -e dpa1 ./rp03.3
+at -e dpa2 ./rp03.0
+at -e dpa3 ./rp03.1
 set mta mpx=7
 set mta type=b
 set dt mpx=6

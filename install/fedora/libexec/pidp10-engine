@@ -131,8 +131,8 @@ sel=$(awk -v n="$sys_oct" '$1 == n { print $2; found=1; exit }
 
 # The boot script and the images it attaches are the same directory (see
 # PIDP10_SYSTEMS above), so a missing directory means the selection table
-# names a system that is not installed; a missing image only means
-# pidp10-fetch-images has not run yet, which is not fatal here.
+# names a system that is not installed. Missing or empty images are checked
+# below, once the boot script is known.
 bootdir=$PIDP10_SYSTEMS/$sel
 [ -d "$bootdir" ] || die "no such system directory: $bootdir"
 
@@ -162,6 +162,43 @@ esac
 
 bootfile=$bootdir/boot$ext
 [ -f "$bootfile" ] || die "missing $bootfile"
+
+# The media the boot script attaches: the paper tape and the disk and tape
+# images. Refuse to boot when one is missing or empty. simh's attach creates a
+# missing file as an empty one (the scripts use "at -e" against that now), and
+# an empty disk pack or paper tape does not fail - the machine boots nothing:
+# READ IN on an empty dskdmp.rim jumps to location 0 and loops there with no
+# DSKDMP. Output files (attach -n: lpt, lp20) and network attachments (ports,
+# nat:, tap:) are not media and are skipped.
+media=$(awk '
+	tolower($1) ~ /^att?(a|ac|ach)?$/ {
+		# Device: the first word that is not a switch. File: the last word
+		# that is neither a switch nor an option ("speed=4800", "line=9,...").
+		dev = ""; file = ""; out = 0
+		for (i = 2; i <= NF; i++) {
+			if ($i ~ /^-/) { if ($i ~ /n/) out = 1; continue }
+			if (dev == "") { dev = tolower($i); continue }
+			if ($i !~ /=/) file = $i
+		}
+		if (out || file == "" || file ~ /:/ || file ~ /^[0-9]+$/) next
+		if (dev ~ /^(ptr|dp|rp|rs|fh|mt|tu|dt)[a-z]?[0-9]*$/) print file
+	}' "$bootfile")
+bad=()
+while IFS= read -r f; do
+	[ -n "$f" ] || continue
+	case "$f" in /*) p=$f ;; *) p=$bootdir/${f#./} ;; esac
+	[ -s "$p" ] || bad+=("$p")
+done <<<"$media"
+if [ ${#bad[@]} -gt 0 ]; then
+	case "$sel" in
+		tops10-*) img=tops10 ;;
+		*)        img=$sel ;;
+	esac
+	for p in "${bad[@]}"; do
+		if [ -e "$p" ]; then say err "$p is empty"; else say err "$p is missing"; fi
+	done
+	die "$sel has no media to boot; fetch it with: sudo -u ${PIDP10_USER:-pidp10} pidp10-fetch-images $img"
+fi
 
 # Where the simulator runs. The boot scripts do `cd systems/<name>` relative to
 # here, so this is what makes the images in the STATE tree the ones that get

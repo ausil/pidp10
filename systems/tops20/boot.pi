@@ -29,7 +29,8 @@ at ni tap:tap0
 set cty rsx20
 att lp20 -n prt.lst
 set rpa0 rp07
-at rpa0 -f dbd9 RH20.RP07.1
+; -e: the image must exist. Without it simh creates an empty file and boots that.
+at -e rpa0 -f dbd9 RH20.RP07.1
 ;att tty -U 2021
 att tty -U 10018
 dep sw 254200000147
