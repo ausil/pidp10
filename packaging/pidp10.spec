@@ -77,7 +77,7 @@
 
 Name:           %{srcname}
 Version:        %{simh_version}
-Release:        4.%{srcdate}%{?dist}
+Release:        5.%{srcdate}%{?dist}
 Summary:        PDP-10 simulator, front-panel emulation and AI Lab peripherals
 
 # simh is the MIT-like "Historical Permission Notice"; st/sty33 are MIT;
@@ -312,15 +312,19 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %{_tmpfilesdir}/%{srcname}.conf
 %ghost %dir %attr(0755,pidp10,pidp10) %{_sharedstatedir}/%{srcname}
 %dir %attr(0755,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems
-%attr(0644,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/selections
+# The selection table and the boot scripts are the operator's to edit (a tap:
+# network instead of nat:, another console port): noreplace keeps an edited
+# copy across upgrades and puts the new one next to it as .rpmnew.
+%config(noreplace) %attr(0644,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/selections
 %dir %attr(0755,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/hills-blinky
-%attr(0644,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/hills-blinky/*
+%attr(0644,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/hills-blinky/BLINKY10_LIST.*
+%config(noreplace) %attr(0644,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/hills-blinky/boot.pi*
 %dir %attr(0755,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/its
-%attr(0644,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/its/*
+%config(noreplace) %attr(0644,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/its/boot.pi*
 %dir %attr(0755,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/tops10-603
-%attr(0644,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/tops10-603/*
+%config(noreplace) %attr(0644,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/tops10-603/boot.pi*
 %dir %attr(0755,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/tops20
-%attr(0644,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/tops20/*
+%config(noreplace) %attr(0644,pidp10,pidp10) %{_sharedstatedir}/%{srcname}/systems/tops20/boot.pi*
 %ghost %dir %attr(0755,pidp10,pidp10) /var/log/%{srcname}
 %ghost %dir %attr(0755,pidp10,pidp10) /run/%{srcname}
 %dir %{_sysconfdir}/%{srcname}
@@ -373,6 +377,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %{_datadir}/%{srcname}/pidp10tilix.conf
 
 %changelog
+* Fri Nov 20 2026 Dennis Gilmore <dennis@ausil.us> - 4.1.0-5.20261106
+- Mark the boot scripts and the selection table %%config(noreplace), so a
+  local edit survives an upgrade
+
 * Fri Nov 20 2026 Dennis Gilmore <dennis@ausil.us> - 4.1.0-4.20261106
 - Load libpcap by its soname (libpcap.so.1) when the unversioned libpcap.so
   from libpcap-devel is not there; Recommend libpcap
