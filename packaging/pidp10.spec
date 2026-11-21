@@ -132,6 +132,13 @@ Requires:       %{name}-clients%{?_isa} = %{version}-%{release}
 # ITS's Chaosnet (pidp10-cbridge.service). Recommended, not required: the unit
 # is skipped without /usr/bin/cbridge, and ITS boots without Chaosnet.
 Recommends:     chaosnet-bridge
+# simh dlopen()s libpcap for its Ethernet devices, so rpm finds no dependency
+# on it. Upstream asks for the unversioned libpcap.so, which only
+# libpcap-devel has; src/pdp10/sim_ether.c falls back to libpcap.so.1, the
+# runtime package's. The IMP's default "at imp nat:" (systems/its/boot.*)
+# works without it, but attaching to a host interface needs it, and without it
+# every boot prints "libpcap.so failed to load, install libpcap".
+Recommends:     libpcap
 Suggests:       firewalld
 Suggests:       vt05
 Suggests:       tek4010

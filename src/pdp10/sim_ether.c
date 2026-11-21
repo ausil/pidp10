@@ -1352,6 +1352,13 @@ int load_pcap(void) {
         }
 #else
       hLib = dlopen(lib_name, RTLD_NOW);
+#if defined(__linux__)
+      /* The unversioned libpcap.so is a development symlink: distributions
+         ship it in libpcap-devel, and the runtime package has only the
+         soname. Fall back to that rather than ask for the headers. */
+      if (hLib == 0)
+        hLib = dlopen("libpcap.so.1", RTLD_NOW);
+#endif
 #endif
       if (hLib == 0) {
         /* failed to load DLL */
