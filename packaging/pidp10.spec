@@ -121,6 +121,8 @@ Requires:       systemd
 Requires:       screen
 Requires:       sudo
 Requires:       polkit
+# pidp10-tv11@.service waits for the engine's TEN11 listener with ss.
+Requires:       iproute
 # pidp10-fetch-images downloads the media with wget and unpacks it with unzip
 # (ITS, TOPS-10, TOPS-20) or tar (WAITS). Without them there is nothing to boot.
 Requires:       wget
@@ -134,9 +136,8 @@ Recommends:     libgpiod-utils
 Recommends:     %{name}-panel%{?_isa} = %{version}-%{release}
 # pdp con / pdp sty, and the pidp10-teletype unit, run sty.
 Requires:       %{name}-clients%{?_isa} = %{version}-%{release}
-# The operator side: pidp10-tv11.service (ITS says "TV 11 WENT DOWN" without
-# it), the console/teletype/view user units, the .desktop files and icons.
-# noarch, so no %%{?_isa}.
+# The operator side: the console/teletype/view user units, the .desktop files
+# and icons. noarch, so no %%{?_isa}.
 Requires:       %{name}-ui = %{version}-%{release}
 # ITS's Chaosnet (pidp10-cbridge.service). Recommended, not required: the unit
 # is skipped without /usr/bin/cbridge, and ITS boots without Chaosnet.
@@ -234,7 +235,6 @@ sed -i \
     -e 's|^disable pidp10-xhost.service|enable pidp10-xhost.service|' \
     -e 's|^disable pidp10-console.service|enable pidp10-console.service|' \
     -e 's|^disable pidp10-teletype.service|enable pidp10-teletype.service|' \
-    -e 's|^disable pidp10-tv11.service|enable pidp10-tv11.service|' \
     %{buildroot}%{_userpresetdir}/pidp10.preset
 %endif
 
@@ -259,24 +259,24 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 # backslash continuation splits the generated command and the shell runs the
 # second line as a command of its own. Keep each unit list on one line.
 %tmpfiles_create_package %{name} %SOURCE2
-%systemd_post pidp10-cbridge.service pidp10-engine@.service pidp10-pdp6.service
+%systemd_post pidp10-cbridge.service pidp10-engine@.service pidp10-pdp6.service pidp10-tv11@.service
 %systemd_user_post pidp10.target pidp10-xhost.service
 
 %preun
-%systemd_preun pidp10-cbridge.service pidp10-engine@.service pidp10-pdp6.service
+%systemd_preun pidp10-cbridge.service pidp10-engine@.service pidp10-pdp6.service pidp10-tv11@.service
 %systemd_user_preun pidp10.target pidp10-xhost.service
 
 %postun
 %systemd_postun_with_restart pidp10-cbridge.service
 
 %post ui
-%systemd_user_post pidp10-console.service pidp10-teletype.service pidp10-tv11.service pidp10-view.service
+%systemd_user_post pidp10-console.service pidp10-teletype.service pidp10-view.service
 
 %preun ui
-%systemd_user_preun pidp10-console.service pidp10-teletype.service pidp10-tv11.service pidp10-view.service
+%systemd_user_preun pidp10-console.service pidp10-teletype.service pidp10-view.service
 
 %postun ui
-%systemd_user_postun_with_restart pidp10-console.service pidp10-teletype.service pidp10-tv11.service pidp10-view.service
+%systemd_user_postun_with_restart pidp10-console.service pidp10-teletype.service pidp10-view.service
 
 
 %files
@@ -303,6 +303,7 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %{_unitdir}/pidp10-cbridge.service
 %{_unitdir}/pidp10-engine@.service
 %{_unitdir}/pidp10-pdp6.service
+%{_unitdir}/pidp10-tv11@.service
 %{_userunitdir}/pidp10.target
 %{_userunitdir}/pidp10-xhost.service
 %{_presetdir}/pidp10.preset
@@ -358,7 +359,6 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %files ui
 %{_userunitdir}/pidp10-console.service
 %{_userunitdir}/pidp10-teletype.service
-%{_userunitdir}/pidp10-tv11.service
 %{_userunitdir}/pidp10-view.service
 %{_datadir}/applications/*.desktop
 %{_datadir}/icons/hicolor/48x48/apps/con.png

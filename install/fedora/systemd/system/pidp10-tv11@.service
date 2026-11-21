@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Knight TV server. tv11 emulates the PDP-11 that drove the AI Lab's TV
+# terminals: it talks to ITS over the KA10's TEN11 interface (port 10011,
+# "at -u ten11 10011" in systems/its/boot.*) and serves tvcon on port 11100.
+# Without it ITS prints "TV 11 WENT DOWN" at boot. It opens no window (tvcon
+# does), so it runs with the engine as the pidp10 user, not in somebody's
+# desktop session. It used to be a user unit, which no part of a cabinet
+# without a desktop login ever started.
+#
+# One instance per engine instance: pidp10-engine@X.service Wants
+# pidp10-tv11@X.service, and this binds to it. tv11 starts after the engine,
+# stops with it, and comes back when the engine is started again; there is
+# nothing to enable.
+#
+# Upstream launched it from the boot script with
+#   !pgrep tv11 && pkill -2 tv11 ; screen -dmS tv11 ...
+# The boot scripts skip that when PIDP10_MANAGED=1 (see pidp10-spawn).
+
+[Unit]
+Description=PiDP-10 Knight TV server (tv11) for engine %i
+Documentation=https://github.com/aap/pdp11
+BindsTo=pidp10-engine@%i.service
+After=pidp10-engine@%i.service
+
+# tv11 is aap/pdp11's Knight TV server, its own package on PATH; skip cleanly
+# when it is not installed.
+ConditionPathExists=/usr/bin/tv11
+
+[Service]
+Type=exec
+User=pidp10
+WorkingDirectory=/var/lib/pidp10
+EnvironmentFile=-/etc/pidp10/pidp10.conf
+# tv11 dials TEN11 once, at startup, and when that fails it does not exit: it
+# says "can't connect to PDP-10" and runs on without one, serving tvcon a
+# blank screen. The engine unit counts as started as soon as screen has
+# forked, before simh has read its boot script, so wait here for the listener.
+# Look at it (ss) rather than connect to it: TEN11 takes one client. Only ITS
+# attaches TEN11; when it does not appear (TOPS-10, TOPS-20) the condition
+# fails, which skips the unit instead of failing it.
+ExecCondition=/bin/sh -c 'for i in $$(seq 60); do ss -Hltn "sport = :10011" | grep -q . && exit 0; sleep 1; done; echo "nothing listening on TEN11 port 10011 (not ITS?): not starting tv11"; exit 1'
+# -p: the KA10's TEN11 port; tv11 serves tvcon on its default 11100. Upstream
+# also passed "-s 4", which tv11 1.0 does not know: it took the "4" as the host
+# name, ignored the rest, and never opened 11100.
+ExecStart=/usr/bin/tv11 -p 10011 localhost
+# A tv11 that dies while the engine runs comes back. When the engine stops,
+# tv11 exits 0 ("fd closed") and BindsTo= has already stopped it anyway.
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=90
+TimeoutStopSec=15
+
+# tv11 reads nothing and writes nothing on disk. Its private /tmp also keeps
+# it off a stray /tmp/tty, which tv11 opens as the PDP-11's terminal if it is
+# there.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# AF_NETLINK for ss in ExecCondition=.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK

@@ -42,7 +42,7 @@ usage: pdp [command]
   console         alias for telcon
   vt52            VT52 on ITS terminal line 9 (port 10018)
   vt05            VT05 on ITS terminal line 9 (port 10018)
-  tvcon           Knight TV (tvcon, from tv11; pidp10-tv11.service)
+  tvcon           Knight TV (tvcon, from tv11; pidp10-tv11@.service)
   tek             Tektronix 4010 on ITS line 8 (port 10017)
   imlac           IMLAC PDS-1 on ITS line 7 (port 10016)
   dp3300          Datapoint 3300 on ITS line 15 (port 10020)
@@ -237,7 +237,7 @@ case "$cmd" in
 	;;
   tv11-tty)
 	echo "pdp: tv11-tty is not offered by this package; for the Knight TV" >&2
-	echo "pdp: use pidp10-tv11.service and 'pdp tvcon'." >&2
+	echo "pdp: use 'pdp tvcon' (tv11 runs as pidp10-tv11@.service)." >&2
 	exit 2
 	;;
   -h|--help|help)

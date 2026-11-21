@@ -25,7 +25,7 @@ echo
 
 
 ; Knight TV system. Comment the next line out if you do not want it.
-; (It is also a user unit: systemctl --user start pidp10-tv11.service)
+; (Under systemd it is pidp10-tv11@.service, started with the engine.)
 !pidp10-spawn tv11 tv11 -p 10011 localhost
 
 ;set console wru=037

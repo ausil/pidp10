@@ -31,6 +31,9 @@ Description=PDP-10 engine (boot %i, console in screen session pidp10)
 Documentation=man:pdpcontrol(1) https://obsolescence.dev/pdp10
 After=network-online.target pidp10-cbridge.service
 Wants=network-online.target
+# The Knight TV server for this instance: it binds to the engine, waits for
+# ITS's TEN11 listener, and skips itself on systems without one.
+Wants=pidp10-tv11@%i.service
 # One cabinet: a second instance would fight over the console port, the panel
 # and the screen session name. Conflicts= cannot name "every other instance of
 # this template", so pdpcontrol stops the running instance before it starts

@@ -18,6 +18,5 @@
 disable pidp10.target
 disable pidp10-xhost.service
 disable pidp10-view.service
-disable pidp10-tv11.service
 disable pidp10-teletype.service
 disable pidp10-console.service

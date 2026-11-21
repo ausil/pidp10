@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: BSD-2-Clause
 #
 # Session bundle for the PiDP-10 kiosk: the desktop half of the cabinet. The
-# Knight-TV display server, the operator terminals, and the xhost grant that
-# lets the engine open its windows here. All of it needs DISPLAY, so it runs
-# as the logged-in user in graphical-session.target.
+# operator terminals, and the xhost grant that lets the engine open its
+# windows here. All of it needs DISPLAY, so it runs as the logged-in user in
+# graphical-session.target.
 #
 # The engine itself is NOT in here: it is the system unit
 # pidp10-engine@.service, running as the pidp10 user in a screen session (and
-# the PDP-6 likewise, pidp10-pdp6.service). Start it with pdpcontrol, or
+# the PDP-6 likewise, pidp10-pdp6.service), and so is the Knight TV server,
+# pidp10-tv11@.service, which needs no display. Start it with pdpcontrol, or
 # enable pidp10-engine@default.service to boot with the machine.
 #
 #   systemctl --user enable --now pidp10.target
@@ -20,7 +21,7 @@
 # handled by systemd instead of by sleeping and praying.
 
 [Unit]
-Description=PiDP-10 desktop (Knight TV, terminals, display access for the engine)
+Description=PiDP-10 desktop (terminals, display access for the engine)
 Documentation=https://obsolescence.dev/pdp10
 After=graphical-session.target
 Wants=graphical-session.target pidp10-xhost.service

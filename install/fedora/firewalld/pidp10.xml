@@ -32,6 +32,8 @@
   <port protocol="tcp" port="10602"/>
   <port protocol="tcp" port="11000"/>
   <port protocol="tcp" port="11600"/>
+  <!-- tv11's Knight TV server, for tvcon on another machine (rpdp tvcon) -->
+  <port protocol="tcp" port="11100"/>
   <!-- netmem / netcons / apr services used by ITS -->
   <port protocol="tcp" port="12000-12200"/>
   <port protocol="tcp" port="12400"/>

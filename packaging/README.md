@@ -168,9 +168,8 @@ spec cannot resolve by itself.
 Subpackages: `pidp10` (engines, helpers, units, config), `pidp10-panel`
 (pinctrl, pidp-gpio-probe, pidp10-test, the `/dev/gpiochip*` udev rule),
 `pidp10-clients` (`sty`, `st`, the Teletype sounds and fonts), `pidp10-ui`
-(the user units, among them `pidp10-tv11.service`, the Knight TV server ITS
-expects; icons, `.desktop` files, tilix layout). `pidp10` Requires
-`pidp10-ui`, so a cabinet always has tv11's unit. `pidp10` Recommends `pidp10-panel`,
+(the console, teletype and view user units, icons, `.desktop` files, tilix
+layout). `pidp10` Requires `pidp10-ui`. `pidp10` Recommends `pidp10-panel`,
 because the engine unit asks the probe whether a cabinet is attached; both
 helpers degrade without it. `pidp10` Requires `pidp10-clients`, which needs
 nothing else from this package: it is what a desktop or laptop installs to
@@ -203,6 +202,10 @@ System scope, all running as the `pidp10` user:
   with ITS on the KA10 (boot 1) through the KA10's `auxcpu` listener on port
   10006; its console is the session itself.
 * `pidp10-cbridge.service`: Chaosnet.
+* `pidp10-tv11@<boot>.service`: the Knight TV server, started by the engine
+  instance of the same name and stopped with it. It waits for ITS's TEN11
+  listener (port 10011) and is skipped on systems without one; `tvcon`
+  connects to it on port 11100.
 
 This is the PiDP-11's layout (`pidp11-simh.service`), for the same reason:
 simh reads its `sim>` prompt from stdin, and the telnet listener on port 1025
@@ -226,8 +229,7 @@ trusted: an attached user can type simh `!` shell escapes, which run as
 
 User scope (the desktop): `pidp10.target` with `pidp10-xhost` (runs
 `xhost +SI:localuser:pidp10` so the engine can open its Type 340 / DD windows
-on this display), `pidp10-teletype`, `pidp10-tv11`, `pidp10-view`,
-`pidp10-console`. Without an X server the engine uses SDL's dummy driver.
+on this display), `pidp10-teletype`, `pidp10-view`, `pidp10-console`. Without an X server the engine uses SDL's dummy driver.
 
 The engines get `AmbientCapabilities=CAP_SYS_NICE` and `LimitRTPRIO=99` from
 their units instead of setuid/setcap. screen runs through
@@ -350,6 +352,6 @@ grep -o '"[a-z0-9-]*\.wav"' src/sty33/sounds.c | sort -u | wc -l                
 ```
 
 The Teletype degrades to silence rather than an error when its samples are
-missing, and `pidp10-cbridge.service` / `pidp10-tv11.service` are skipped by
+missing, and `pidp10-cbridge.service` / `pidp10-tv11@.service` are skipped by
 their `ConditionPathExists=` when the device sims are not installed - which is
 the intended behaviour, but only if it is deliberate.
