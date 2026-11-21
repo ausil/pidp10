@@ -128,6 +128,12 @@ done
 
 [ ${#want[@]} -gt 0 ] || { list; echo; echo "usage: pidp10-fetch-images [--all | NAME...]"; exit 2; }
 
+# Check the tools before downloading, not after: the package requires them,
+# but a checkout run by hand may not have them.
+for t in wget unzip tar sha256sum; do
+	command -v "$t" >/dev/null 2>&1 || die "$t not found (dnf install $t)"
+done
+
 [ -d "$PIDP10_STATE" ] || die "$PIDP10_STATE does not exist (run: systemd-tmpfiles --create pidp10.conf)"
 [ -w "$PIDP10_STATE" ] || die "$PIDP10_STATE is not writable by $(id -un) (chown it to pidp10, or run with sudo -u pidp10)"
 

@@ -121,6 +121,11 @@ Requires:       systemd
 Requires:       screen
 Requires:       sudo
 Requires:       polkit
+# pidp10-fetch-images downloads the media with wget and unpacks it with unzip
+# (ITS, TOPS-10, TOPS-20) or tar (WAITS). Without them there is nothing to boot.
+Requires:       wget
+Requires:       unzip
+Requires:       tar
 # Lets the pidp10 user open the Type 340 / DD windows on the desktop
 # (pidp10-xhost.service); without it the engine runs headless.
 Recommends:     xhost
