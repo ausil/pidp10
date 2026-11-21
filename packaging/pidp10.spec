@@ -77,7 +77,7 @@
 
 Name:           %{srcname}
 Version:        %{simh_version}
-Release:        3.%{srcdate}%{?dist}
+Release:        4.%{srcdate}%{?dist}
 Summary:        PDP-10 simulator, front-panel emulation and AI Lab peripherals
 
 # simh is the MIT-like "Historical Permission Notice"; st/sty33 are MIT;
@@ -373,6 +373,17 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %{_datadir}/%{srcname}/pidp10tilix.conf
 
 %changelog
+* Fri Nov 20 2026 Dennis Gilmore <dennis@ausil.us> - 4.1.0-4.20261106
+- Load libpcap by its soname (libpcap.so.1) when the unversioned libpcap.so
+  from libpcap-devel is not there; Recommend libpcap
+- Require wget, unzip and tar for pidp10-fetch-images, which now checks for
+  its tools before downloading
+- Engine: refuse to boot a system whose disk or tape images are missing or
+  empty, and say which pidp10-fetch-images to run; the boot scripts attach
+  their media with "at -e" so simh no longer creates empty images
+- Require pidp10-ui, which carries pidp10-tv11.service; drop %%{?_isa} from
+  the noarch -ui package's requirement on pidp10
+
 * Fri Nov 20 2026 Dennis Gilmore <dennis@ausil.us> - 4.1.0-3.20261106
 - Recommend chaosnet-bridge (was a Suggests on cbridge, which nothing provides)
 - pidp10-cbridge.service: make /tmp writable instead of the not yet existing
